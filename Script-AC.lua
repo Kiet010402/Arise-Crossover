@@ -101,7 +101,7 @@ local function isEnemyDead(enemy)
     return false
 end
 
-local function getNearestSelectedEnemy()
+local function getNearestSelectedEnemy(specificMob)
     local nearestEnemy = nil
     local shortestDistance = math.huge
     local playerPosition = hrp.Position
@@ -111,12 +111,29 @@ local function getNearestSelectedEnemy()
             local healthBar = enemy:FindFirstChild("HealthBar")
             if healthBar and healthBar:FindFirstChild("Main") and healthBar.Main:FindFirstChild("Title") then
                 local title = healthBar.Main.Title
-                if title and title:IsA("TextLabel") and title.ContentText == selectedMobName and not killedNPCs[enemy.Name] then
-                    local enemyPosition = enemy.HumanoidRootPart.Position
-                    local distance = (playerPosition - enemyPosition).Magnitude
-                    if distance < shortestDistance then
-                        shortestDistance = distance
-                        nearestEnemy = enemy
+                if title and title:IsA("TextLabel") then
+                    local mobName = title.ContentText
+                    -- Nếu mob cụ thể được chỉ định, chỉ tìm mob đó
+                    -- Nếu không, tìm bất kỳ mob nào trong danh sách được chọn
+                    local isSelected = false
+                    if specificMob then
+                        isSelected = (mobName == specificMob)
+                    else
+                        for mob, _ in pairs(selectedMobs) do
+                            if mobName == mob then
+                                isSelected = true
+                                break
+                            end
+                        end
+                    end
+                    
+                    if isSelected and not killedNPCs[enemy.Name] then
+                        local enemyPosition = enemy.HumanoidRootPart.Position
+                        local distance = (playerPosition - enemyPosition).Magnitude
+                        if distance < shortestDistance then
+                            shortestDistance = distance
+                            nearestEnemy = enemy
+                        end
                     end
                 end
             end
@@ -236,8 +253,15 @@ local function teleportToSelectedEnemy()
     while teleportEnabled do
         local targetFound = false
         
+        -- Kiểm tra nếu danh sách mob trống
+        local hasMobs = false
+        for _, _ in pairs(selectedMobs) do
+            hasMobs = true
+            break
+        end
+        
         -- Nếu không có mob nào được chọn, thử farm tất cả mob trong world hiện tại
-        if next(selectedMobs) == nil then
+        if not hasMobs then
             local target = getNearestEnemy()
             if target and target.Parent then
                 anticheat()
@@ -291,7 +315,7 @@ local function teleportToSelectedEnemy()
                     break -- Tiếp tục với mob tiếp theo trong vòng lặp tiếp theo
                 end
             end
-        }
+        end
         
         if not targetFound then
             task.wait(0.2) -- Đợi trước khi kiểm tra lại
@@ -387,7 +411,7 @@ local worldToSpawnCode = {
 }
 
 local selectedWorld = ConfigSystem.CurrentConfig.SelectedWorld or "SoloWorld" -- Default world
-local selectedMobs = {} -- Danh sách các mob được chọn
+local selectedMobs = ConfigSystem.CurrentConfig.SelectedMobs or {} -- Danh sách các mob được chọn
 
 -- Hàm teleport tới world và cập nhật mob
 local function teleportToWorldAndUpdateMobs(world)
@@ -399,7 +423,30 @@ local function teleportToWorldAndUpdateMobs(world)
     -- Teleport đến world tương ứng
     local spawnCode = worldToSpawnCode[world]
     if spawnCode then
-        SetSpawnAndReset(spawnCode)
+        local args = {
+            [1] = {
+                [1] = {
+                    ["Event"] = "ChangeSpawn",
+                    ["Spawn"] = spawnCode
+                },
+                [2] = "\n"
+            }
+        }
+        
+        local remote = game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent")
+        remote:FireServer(unpack(args))
+        
+        -- Đợi một chút trước khi hồi sinh
+        task.wait(0.5)
+        
+        -- Hồi sinh nhân vật
+        local player = game.Players.LocalPlayer
+        if player.Character and player.Character.Parent then
+            local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                humanoid.Health = 0
+            end
+        end
     end
     
     -- Cập nhật danh sách mob dựa trên world được chọn
@@ -431,13 +478,12 @@ Tabs.Main:AddDropdown("WorldMobDropdown", {
     Title = "Select Enemy",
     Values = mobsByWorld[selectedWorld] or {},
     Multi = true, -- Cho phép chọn nhiều
-    Default = ConfigSystem.CurrentConfig.SelectedMobs or {},
+    Default = selectedMobs,
     Callback = function(mobs)
         selectedMobs = mobs
         ConfigSystem.CurrentConfig.SelectedMobs = mobs
         ConfigSystem.SaveConfig()
         killedNPCs = {} -- Đặt lại danh sách NPC đã tiêu diệt khi thay đổi mob
-        print("Selected Mobs:", table.concat(selectedMobs, ", ")) -- Gỡ lỗi
     end
 })
 
