@@ -101,7 +101,7 @@ local function isEnemyDead(enemy)
     return false
 end
 
-local function getNearestSelectedEnemy(specificMob)
+local function getNearestSelectedEnemy()
     local nearestEnemy = nil
     local shortestDistance = math.huge
     local playerPosition = hrp.Position
@@ -111,31 +111,12 @@ local function getNearestSelectedEnemy(specificMob)
             local healthBar = enemy:FindFirstChild("HealthBar")
             if healthBar and healthBar:FindFirstChild("Main") and healthBar.Main:FindFirstChild("Title") then
                 local title = healthBar.Main.Title
-                if title and title:IsA("TextLabel") then
-                    local mobName = title.ContentText
-                    -- Nếu mob cụ thể được chỉ định, chỉ tìm mob đó
-                    -- Nếu không, tìm bất kỳ mob nào trong danh sách được chọn
-                    local isSelected = false
-                    if specificMob then
-                        isSelected = (mobName == specificMob)
-                    else
-                        if selectedMobs then
-                            for mob, _ in pairs(selectedMobs) do
-                                if mobName == mob then
-                                    isSelected = true
-                                    break
-                                end
-                            end
-                        end
-                    end
-                    
-                    if isSelected and not killedNPCs[enemy.Name] then
-                        local enemyPosition = enemy.HumanoidRootPart.Position
-                        local distance = (playerPosition - enemyPosition).Magnitude
-                        if distance < shortestDistance then
-                            shortestDistance = distance
-                            nearestEnemy = enemy
-                        end
+                if title and title:IsA("TextLabel") and title.ContentText == selectedMobName and not killedNPCs[enemy.Name] then
+                    local enemyPosition = enemy.HumanoidRootPart.Position
+                    local distance = (playerPosition - enemyPosition).Magnitude
+                    if distance < shortestDistance then
+                        shortestDistance = distance
+                        nearestEnemy = enemy
                     end
                 end
             end
@@ -253,77 +234,30 @@ end
 
 local function teleportToSelectedEnemy()
     while teleportEnabled do
-        local targetFound = false
-        
-        -- Kiểm tra nếu danh sách mob trống
-        local hasMobs = false
-        if selectedMobs then
-            for _, _ in pairs(selectedMobs) do
-                hasMobs = true
-                break
+        local target = getNearestSelectedEnemy()
+        if target and target.Parent then
+            anticheat()
+            moveToTarget(target)
+            task.wait(0.5)
+            fireShowPetsRemote()
+
+            remote:FireServer({
+                {
+                    ["PetPos"] = {},
+                    ["AttackType"] = "All",
+                    ["Event"] = "Attack",
+                    ["Enemy"] = target.Name
+                },
+                "\7"
+            })
+
+            while teleportEnabled and target.Parent and not isEnemyDead(target) do
+                task.wait(0.1)
             end
+
+            killedNPCs[target.Name] = true
         end
-        
-        -- Nếu không có mob nào được chọn, thử farm tất cả mob trong world hiện tại
-        if not hasMobs then
-            local target = getNearestEnemy()
-            if target and target.Parent then
-                anticheat()
-                moveToTarget(target)
-                task.wait(0.5)
-                fireShowPetsRemote()
-                
-                remote:FireServer({
-                    {
-                        ["PetPos"] = {},
-                        ["AttackType"] = "All",
-                        ["Event"] = "Attack",
-                        ["Enemy"] = target.Name
-                    },
-                    "\7"
-                })
-                
-                while teleportEnabled and target.Parent and not isEnemyDead(target) do
-                    task.wait(0.1)
-                end
-                
-                killedNPCs[target.Name] = true
-                targetFound = true
-            end
-        else
-            -- Lặp qua từng mob được chọn - đảm bảo selectedMobs là table
-            for mobName, _ in pairs(selectedMobs or {}) do
-                local target = getNearestSelectedEnemy(mobName)
-                if target and target.Parent then
-                    anticheat()
-                    moveToTarget(target)
-                    task.wait(0.5)
-                    fireShowPetsRemote()
-                    
-                    remote:FireServer({
-                        {
-                            ["PetPos"] = {},
-                            ["AttackType"] = "All",
-                            ["Event"] = "Attack",
-                            ["Enemy"] = target.Name
-                        },
-                        "\7"
-                    })
-                    
-                    while teleportEnabled and target.Parent and not isEnemyDead(target) do
-                        task.wait(0.1)
-                    end
-                    
-                    killedNPCs[target.Name] = true
-                    targetFound = true
-                    break -- Tiếp tục với mob tiếp theo trong vòng lặp tiếp theo
-                end
-            end
-        end
-        
-        if not targetFound then
-            task.wait(0.2) -- Đợi trước khi kiểm tra lại
-        end
+        task.wait(0.20)
     end
 end
 
@@ -401,110 +335,107 @@ local mobsByWorld = {
     ["OPWorld"] = {"Neptune", "Jollyn", "Namyura", "KayAy", "Zoro"},
     ["BleachWorld"] = {"Orihime", "Chad", "Ishida", "Rukia", "Toshiro"},
     ["BCWorld"] = {"Gojo", "Yuta", "Yuji", "Nobara", "Megumi"},
+    ["ChainsawWorld"] = {"Heaven", "Zere", "Ika"},
     ["JojoWorld"] = {"Jotaro", "Josuke", "Giorno", "Jolyne", "Johnny"}
 }
 
--- Mapping từ world name đến spawn code
-local worldToSpawnCode = {
-    ["SoloWorld"] = "SoloWorld",
-    ["NarutoWorld"] = "NarutoWorld", 
-    ["OPWorld"] = "OPWorld",
-    ["BleachWorld"] = "BleachWorld",
-    ["BCWorld"] = "BCWorld",
-    ["JojoWorld"] = "JojoWorld"
+-- Thêm tọa độ của từng world
+local worldCoordinates = {
+    ["SoloWorld"] = CFrame.new(563.0377197265625, 42.79697799682617, 928.4114379882812),
+    ["NarutoWorld"] = CFrame.new(-3391.279052734375, 70.46292114257812, 2751.94091796875),
+    ["OPWorld"] = CFrame.new(-3472.33984375, 120.56903076171875, -2382.326171875),
+    ["BleachWorld"] = CFrame.new(3019.1357421875, 89.3877944946289, -3119.5771484375),
+    ["BCWorld"] = CFrame.new(79.08283996582031, 70.1742935180664, 4813.76611328125),
+    ["ChainsawWorld"] = CFrame.new(185.05712890625, 149.93545532226562, -4930.76953125),
+    ["JojoWorld"] = CFrame.new(5413.0341796875, 59.8076057434082, -129.16357421875)
 }
 
--- Thay đổi cấu trúc dữ liệu để selectedMobs luôn là table
-local selectedWorld = ConfigSystem.CurrentConfig.SelectedWorld or "SoloWorld" -- Default world
-local selectedMobs = {}
-
--- Đảm bảo SelectedMobs luôn là table
-if ConfigSystem.CurrentConfig.SelectedMobs then
-    selectedMobs = ConfigSystem.CurrentConfig.SelectedMobs
-else
-    selectedMobs = {}
-    ConfigSystem.CurrentConfig.SelectedMobs = selectedMobs
-    ConfigSystem.SaveConfig()
-end
-
--- Hàm teleport tới world và cập nhật mob
-local function teleportToWorldAndUpdateMobs(world)
-    -- Lưu lại world được chọn
-    selectedWorld = world
-    ConfigSystem.CurrentConfig.SelectedWorld = world
-    ConfigSystem.SaveConfig()
-    
-    -- Teleport đến world tương ứng
-    local spawnCode = worldToSpawnCode[world]
-    if spawnCode then
-        local args = {
-            [1] = {
-                [1] = {
-                    ["Event"] = "ChangeSpawn",
-                    ["Spawn"] = spawnCode
-                },
-                [2] = "\n"
-            }
-        }
-        
-        local remote = game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent")
-        remote:FireServer(unpack(args))
-        
-        -- Đợi một chút trước khi hồi sinh
-        task.wait(0.5)
-        
-        -- Hồi sinh nhân vật
-        local player = game.Players.LocalPlayer
-        if player.Character and player.Character.Parent then
-            local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
-            if humanoid then
-                humanoid.Health = 0
+-- Hàm teleport đến world
+local function teleportToWorld(worldName)
+    if worldCoordinates[worldName] then
+        -- Tắt auto farm nếu đang bật
+        if teleportEnabled then
+            teleportEnabled = false
+            -- Tìm và cập nhật toggle tương ứng nếu cần
+            local farmToggle = Fluent.Options.FarmSelectedMob
+            if farmToggle then
+                farmToggle:SetValue(false)
+            end
+            
+            local nearestFarmToggle = Fluent.Options.TeleportMobs
+            if nearestFarmToggle then
+                nearestFarmToggle:SetValue(false)
             end
         end
-    end
-    
-    -- Cập nhật danh sách mob dựa trên world được chọn
-    local mobDropdown = Fluent.Options.WorldMobDropdown
-    if mobDropdown then
-        mobDropdown:SetValues(mobsByWorld[world] or {})
         
-        -- Reset mob selection khi chuyển world
-        selectedMobs = {}
-        ConfigSystem.CurrentConfig.SelectedMobs = selectedMobs
-        ConfigSystem.SaveConfig()
-        killedNPCs = {} -- Đặt lại danh sách NPC đã tiêu diệt
+        -- Anticheat bypass
+        anticheat()
+        
+        -- Teleport
+        local tweenInfo = TweenInfo.new(2, Enum.EasingStyle.Linear)
+        local tween = TweenService:Create(hrp, tweenInfo, {CFrame = worldCoordinates[worldName]})
+        tween:Play()
+        
+        task.wait(1)
+        Fluent:Notify({
+            Title = "Teleported",
+            Content = "Successfully teleported to " .. worldName,
+            Duration = 2
+        })
     end
 end
+
+local selectedWorld = "SoloWorld" -- Default world
 
 -- Dropdown để chọn World/Map
 Tabs.Main:AddDropdown("WorldDropdown", {
     Title = "Select World",
-    Values = {"SoloWorld", "NarutoWorld", "OPWorld", "BleachWorld", "BCWorld", "JojoWorld"},
+    Values = {"SoloWorld", "NarutoWorld", "OPWorld", "BleachWorld", "BCWorld", "ChainsawWorld", "JojoWorld"},
     Multi = false,
     Default = selectedWorld,
     Callback = function(world)
-        teleportToWorldAndUpdateMobs(world)
+        selectedWorld = world
+        ConfigSystem.CurrentConfig.SelectedWorld = world
+        
+        -- Teleport đến world mới
+        teleportToWorld(world)
+        
+        -- Cập nhật danh sách mob dựa trên world được chọn
+        local mobDropdown = Fluent.Options.WorldMobDropdown
+        if mobDropdown then
+            mobDropdown:SetValues(mobsByWorld[world] or {})
+            -- Đặt giá trị mặc định nếu có mob
+            if #mobsByWorld[world] > 0 then
+                selectedMobName = mobsByWorld[world][1]
+                mobDropdown:SetValue(selectedMobName)
+                ConfigSystem.CurrentConfig.SelectedMobName = selectedMobName
+            else
+                selectedMobName = ""
+            end
+        end
+        
+        ConfigSystem.SaveConfig()
+        killedNPCs = {} -- Đặt lại danh sách NPC đã tiêu diệt khi thay đổi world
     end
 })
 
--- Dropdown để chọn nhiều Mob trong world đã chọn
+-- Dropdown để chọn Mob trong world đã chọn
 Tabs.Main:AddDropdown("WorldMobDropdown", {
     Title = "Select Enemy",
     Values = mobsByWorld[selectedWorld] or {},
-    Multi = true, -- Cho phép chọn nhiều
-    Default = selectedMobs or {},
-    Callback = function(mobs)
-        if mobs then
-            selectedMobs = mobs
-            ConfigSystem.CurrentConfig.SelectedMobs = mobs
-            ConfigSystem.SaveConfig()
-            killedNPCs = {} -- Đặt lại danh sách NPC đã tiêu diệt khi thay đổi mob
-        end
+    Multi = false,
+    Default = mobsByWorld[selectedWorld] and mobsByWorld[selectedWorld][1] or "",
+    Callback = function(mob)
+        selectedMobName = mob
+        ConfigSystem.CurrentConfig.SelectedMobName = mob
+        ConfigSystem.SaveConfig()
+        killedNPCs = {} -- Đặt lại danh sách NPC đã tiêu diệt khi thay đổi mob
+        print("Selected Mob:", selectedMobName) -- Gỡ lỗi
     end
 })
 
 Tabs.Main:AddToggle("FarmSelectedMob", {
-    Title = "Farm Selected Mob(s)",
+    Title = "Farm Selected Mob",
     Default = ConfigSystem.CurrentConfig.FarmSelectedMob or false,
     Callback = function(state)
         teleportEnabled = state
@@ -965,7 +896,8 @@ local villageSpawns = {
     ["BRUM ISLAND"] = "OPWorld",
     ["Leveling City"] = "SoloWorld",
     ["FACEHEAL TOWN"] = "BleachWorld",
-    ["Lucky"] = "BCWorld"
+    ["Lucky"] = "BCWorld",
+    ["Mori Town"] = "JojoWorld",
 }
 
 local function SetSpawnAndReset(spawnName)
@@ -2256,16 +2188,14 @@ end
 
 -- Thêm event listener để lưu ngay khi thay đổi giá trị
 local function setupSaveEvents()
-    for _, tab in pairs(Tabs or {}) do
-        if tab and tab._components then
-            for _, element in pairs(tab._components) do
-                if element and element.OnChanged then
-                    element.OnChanged:Connect(function()
-                        pcall(function()
-                            SaveManager:Save("AutoSave_" .. player.Name)
-                        end)
+    for _, tab in pairs(Tabs) do
+        for _, element in pairs(tab._components) do
+            if element.OnChanged then
+                element.OnChanged:Connect(function()
+                    pcall(function()
+                        SaveManager:Save("AutoSave_" .. playerName)
                     end)
-                end
+                end)
             end
         end
     end
