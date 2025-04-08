@@ -90,63 +90,51 @@ local function anticheat()
     end
 end
 
--- Sửa hàm isEnemyDead để thêm kiểm tra nil
 local function isEnemyDead(enemy)
-    if not enemy then return true end
-    
     local healthBar = enemy:FindFirstChild("HealthBar")
-    if not healthBar then return false end
-    
-    local main = healthBar:FindFirstChild("Main")
-    if not main then return false end
-    
-    local bar = main:FindFirstChild("Bar")
-    if not bar then return false end
-    
-    local amount = bar:FindFirstChild("Amount")
-    if not amount or not amount:IsA("TextLabel") then return false end
-    
-    return amount.ContentText == "0 HP"
+    if healthBar and healthBar:FindFirstChild("Main") and healthBar.Main:FindFirstChild("Bar") then
+        local amount = healthBar.Main.Bar:FindFirstChild("Amount")
+        if amount and amount:IsA("TextLabel") and amount.ContentText == "0 HP" then
+            return true
+        end
+    end
+    return false
 end
 
--- Sửa hàm getNearestSelectedEnemy để thêm kiểm tra nil
 local function getNearestSelectedEnemy(specificMob)
     local nearestEnemy = nil
     local shortestDistance = math.huge
     local playerPosition = hrp.Position
 
     for _, enemy in ipairs(enemiesFolder:GetChildren()) do
-        if enemy and enemy:IsA("Model") and enemy:FindFirstChild("HumanoidRootPart") then
+        if enemy:IsA("Model") and enemy:FindFirstChild("HumanoidRootPart") then
             local healthBar = enemy:FindFirstChild("HealthBar")
-            if healthBar then
-                local main = healthBar:FindFirstChild("Main")
-                if main then
-                    local title = main:FindFirstChild("Title")
-                    if title and title:IsA("TextLabel") then
-                        local mobName = title.ContentText
-                        -- Nếu mob cụ thể được chỉ định, chỉ tìm mob đó
-                        -- Nếu không, tìm bất kỳ mob nào trong danh sách được chọn
-                        local isSelected = false
-                        if specificMob then
-                            isSelected = (mobName == specificMob)
-                        else
-                            if selectedMobs then
-                                for mob, _ in pairs(selectedMobs) do
-                                    if mobName == mob then
-                                        isSelected = true
-                                        break
-                                    end
+            if healthBar and healthBar:FindFirstChild("Main") and healthBar.Main:FindFirstChild("Title") then
+                local title = healthBar.Main.Title
+                if title and title:IsA("TextLabel") then
+                    local mobName = title.ContentText
+                    -- Nếu mob cụ thể được chỉ định, chỉ tìm mob đó
+                    -- Nếu không, tìm bất kỳ mob nào trong danh sách được chọn
+                    local isSelected = false
+                    if specificMob then
+                        isSelected = (mobName == specificMob)
+                    else
+                        if selectedMobs then
+                            for mob, _ in pairs(selectedMobs) do
+                                if mobName == mob then
+                                    isSelected = true
+                                    break
                                 end
                             end
                         end
-                        
-                        if isSelected and not killedNPCs[enemy.Name] then
-                            local enemyPosition = enemy.HumanoidRootPart.Position
-                            local distance = (playerPosition - enemyPosition).Magnitude
-                            if distance < shortestDistance then
-                                shortestDistance = distance
-                                nearestEnemy = enemy
-                            end
+                    end
+                    
+                    if isSelected and not killedNPCs[enemy.Name] then
+                        local enemyPosition = enemy.HumanoidRootPart.Position
+                        local distance = (playerPosition - enemyPosition).Magnitude
+                        if distance < shortestDistance then
+                            shortestDistance = distance
+                            nearestEnemy = enemy
                         end
                     end
                 end
@@ -177,13 +165,12 @@ local function fireShowPetsRemote()
     remote:FireServer(unpack(args))
 end
 
--- Sửa hàm getNearestEnemy để thêm kiểm tra nil
 local function getNearestEnemy()
     local nearestEnemy, shortestDistance = nil, math.huge
     local playerPosition = hrp.Position
 
     for _, enemy in ipairs(enemiesFolder:GetChildren()) do
-        if enemy and enemy:IsA("Model") and enemy:FindFirstChild("HumanoidRootPart") and not killedNPCs[enemy.Name] then
+        if enemy:IsA("Model") and enemy:FindFirstChild("HumanoidRootPart") and not killedNPCs[enemy.Name] then
             local distance = (playerPosition - enemy:GetPivot().Position).Magnitude
             if distance < shortestDistance then
                 shortestDistance = distance
@@ -264,45 +251,214 @@ local function teleportDungeon()
     end
 end
 
--- Thêm biến để quản lý khởi động tự động
-local isInitialLoad = true
-local farmDelayEnabled = true  -- Bật trễ khi farm
-local initialFarmDelay = 6     -- Đặt độ trễ 6 giây
+local function teleportToSelectedEnemy()
+    while teleportEnabled do
+        local targetFound = false
+        
+        -- Kiểm tra nếu danh sách mob trống
+        local hasMobs = false
+        if selectedMobs then
+            for _, _ in pairs(selectedMobs) do
+                hasMobs = true
+                break
+            end
+        end
+        
+        -- Nếu không có mob nào được chọn, thử farm tất cả mob trong world hiện tại
+        if not hasMobs then
+            local target = getNearestEnemy()
+            if target and target.Parent then
+                anticheat()
+                moveToTarget(target)
+                task.wait(0.5)
+                fireShowPetsRemote()
+                
+                remote:FireServer({
+                    {
+                        ["PetPos"] = {},
+                        ["AttackType"] = "All",
+                        ["Event"] = "Attack",
+                        ["Enemy"] = target.Name
+                    },
+                    "\7"
+                })
+                
+                while teleportEnabled and target.Parent and not isEnemyDead(target) do
+                    task.wait(0.1)
+                end
+                
+                killedNPCs[target.Name] = true
+                targetFound = true
+            end
+        else
+            -- Lặp qua từng mob được chọn - đảm bảo selectedMobs là table
+            for mobName, _ in pairs(selectedMobs or {}) do
+                local target = getNearestSelectedEnemy(mobName)
+                if target and target.Parent then
+                    anticheat()
+                    moveToTarget(target)
+                    task.wait(0.5)
+                    fireShowPetsRemote()
+                    
+                    remote:FireServer({
+                        {
+                            ["PetPos"] = {},
+                            ["AttackType"] = "All",
+                            ["Event"] = "Attack",
+                            ["Enemy"] = target.Name
+                        },
+                        "\7"
+                    })
+                    
+                    while teleportEnabled and target.Parent and not isEnemyDead(target) do
+                        task.wait(0.1)
+                    end
+                    
+                    killedNPCs[target.Name] = true
+                    targetFound = true
+                    break -- Tiếp tục với mob tiếp theo trong vòng lặp tiếp theo
+                end
+            end
+        end
+        
+        if not targetFound then
+            task.wait(0.2) -- Đợi trước khi kiểm tra lại
+        end
+    end
+end
 
--- Hàm teleport tới world và cập nhật mob - Thay đổi để không tự động teleport lúc khởi động
-local function teleportToWorldAndUpdateMobs(world, skipTeleport)
+local function attackEnemy()
+    while damageEnabled do
+        local targetEnemy = getNearestEnemy()
+        if targetEnemy then
+            local args = {
+                [1] = {
+                    [1] = {
+                        ["Event"] = "PunchAttack",
+                        ["Enemy"] = targetEnemy.Name
+                    },
+                    [2] = "\4"
+                }
+            }
+            remote:FireServer(unpack(args))
+        end
+        task.wait(1)
+    end
+end
+
+-- Farm Method Selection Dropdown
+local Fluent
+local SaveManager
+local InterfaceManager
+
+local success, err = pcall(function()
+    Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+    SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
+    InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
+end)
+
+if not success then
+    warn("Lỗi khi tải thư viện Fluent: " .. tostring(err))
+    -- Thử tải từ URL dự phòng
+    pcall(function()
+        Fluent = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Fluent.lua"))()
+        SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
+        InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
+    end)
+end
+
+if not Fluent then
+    error("Không thể tải thư viện Fluent. Vui lòng kiểm tra kết nối internet hoặc executor.")
+    return
+end
+
+local Window = Fluent:CreateWindow({
+    Title = "Kaihon Hub | Arise Crossover",
+    SubTitle = "",
+    TabWidth = 140,
+    Size = UDim2.fromOffset(450, 350),
+    Acrylic = false,
+    Theme = "Darker",
+    MinimizeKey = Enum.KeyCode.LeftControl
+})
+
+local Tabs = {
+    Discord = Window:AddTab({ Title = "INFO", Icon = ""}),
+    Main = Window:AddTab({ Title = "Main", Icon = "" }),
+    tp = Window:AddTab({ Title = "Teleports", Icon = "" }),
+    mount = Window:AddTab({ Title = "Mount Location/farm", Icon = "" }),
+    dungeon = Window:AddTab({ Title = "Dungeon ", Icon = "" }),
+    pets = Window:AddTab({ Title = "Pets ", Icon = "" }),
+    Player = Window:AddTab({ Title = "Player", Icon = "" }),
+    misc = Window:AddTab({ Title = "misc", Icon = "" }),
+    Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
+}
+
+-- Tạo mapping giữa các map và danh sách mob tương ứng
+local mobsByWorld = {
+    ["SoloWorld"] = {"Soondoo", "Gonshee", "Daek", "Longin", "Anders", "Largalgan"},
+    ["NarutoWorld"] = {"Snake Man", "Blossom", "Black Crow"},
+    ["OPWorld"] = {"Neptune", "Jollyn", "Namyura", "KayAy", "Zoro"},
+    ["BleachWorld"] = {"Orihime", "Chad", "Ishida", "Rukia", "Toshiro"},
+    ["BCWorld"] = {"Gojo", "Yuta", "Yuji", "Nobara", "Megumi"},
+    ["JojoWorld"] = {"Jotaro", "Josuke", "Giorno", "Jolyne", "Johnny"}
+}
+
+-- Mapping từ world name đến spawn code
+local worldToSpawnCode = {
+    ["SoloWorld"] = "SoloWorld",
+    ["NarutoWorld"] = "NarutoWorld", 
+    ["OPWorld"] = "OPWorld",
+    ["BleachWorld"] = "BleachWorld",
+    ["BCWorld"] = "BCWorld",
+    ["JojoWorld"] = "JojoWorld"
+}
+
+-- Thay đổi cấu trúc dữ liệu để selectedMobs luôn là table
+local selectedWorld = ConfigSystem.CurrentConfig.SelectedWorld or "SoloWorld" -- Default world
+local selectedMobs = {}
+
+-- Đảm bảo SelectedMobs luôn là table
+if ConfigSystem.CurrentConfig.SelectedMobs then
+    selectedMobs = ConfigSystem.CurrentConfig.SelectedMobs
+else
+    selectedMobs = {}
+    ConfigSystem.CurrentConfig.SelectedMobs = selectedMobs
+    ConfigSystem.SaveConfig()
+end
+
+-- Hàm teleport tới world và cập nhật mob
+local function teleportToWorldAndUpdateMobs(world)
     -- Lưu lại world được chọn
     selectedWorld = world
     ConfigSystem.CurrentConfig.SelectedWorld = world
     ConfigSystem.SaveConfig()
     
-    -- Teleport đến world tương ứng - chỉ khi không phải lúc khởi động
-    if not skipTeleport then
-        local spawnCode = worldToSpawnCode[world]
-        if spawnCode then
-            local args = {
+    -- Teleport đến world tương ứng
+    local spawnCode = worldToSpawnCode[world]
+    if spawnCode then
+        local args = {
+            [1] = {
                 [1] = {
-                    [1] = {
-                        ["Event"] = "ChangeSpawn",
-                        ["Spawn"] = spawnCode
-                    },
-                    [2] = "\n"
-                }
+                    ["Event"] = "ChangeSpawn",
+                    ["Spawn"] = spawnCode
+                },
+                [2] = "\n"
             }
-            
-            local remote = game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent")
-            remote:FireServer(unpack(args))
-            
-            -- Đợi một chút trước khi hồi sinh
-            task.wait(0.5)
-            
-            -- Hồi sinh nhân vật
-            local player = game.Players.LocalPlayer
-            if player.Character and player.Character.Parent then
-                local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
-                if humanoid then
-                    humanoid.Health = 0
-                end
+        }
+        
+        local remote = game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent")
+        remote:FireServer(unpack(args))
+        
+        -- Đợi một chút trước khi hồi sinh
+        task.wait(0.5)
+        
+        -- Hồi sinh nhân vật
+        local player = game.Players.LocalPlayer
+        if player.Character and player.Character.Parent then
+            local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                humanoid.Health = 0
             end
         end
     end
@@ -312,34 +468,22 @@ local function teleportToWorldAndUpdateMobs(world, skipTeleport)
     if mobDropdown then
         mobDropdown:SetValues(mobsByWorld[world] or {})
         
-        -- Không reset mob selection khi chuyển world nếu đang khởi động
-        if not skipTeleport then
-            selectedMobs = {}
-            ConfigSystem.CurrentConfig.SelectedMobs = selectedMobs
-            ConfigSystem.SaveConfig()
-            killedNPCs = {} -- Đặt lại danh sách NPC đã tiêu diệt
-        end
+        -- Reset mob selection khi chuyển world
+        selectedMobs = {}
+        ConfigSystem.CurrentConfig.SelectedMobs = selectedMobs
+        ConfigSystem.SaveConfig()
+        killedNPCs = {} -- Đặt lại danh sách NPC đã tiêu diệt
     end
 end
 
--- Dropdown để chọn World/Map - Thay đổi để không tự động teleport lúc khởi động
+-- Dropdown để chọn World/Map
 Tabs.Main:AddDropdown("WorldDropdown", {
     Title = "Select World",
     Values = {"SoloWorld", "NarutoWorld", "OPWorld", "BleachWorld", "BCWorld", "JojoWorld"},
     Multi = false,
     Default = selectedWorld,
     Callback = function(world)
-        if isInitialLoad then
-            -- Đang trong giai đoạn khởi động, chỉ cập nhật UI, không teleport
-            selectedWorld = world
-            local mobDropdown = Fluent.Options.WorldMobDropdown
-            if mobDropdown then
-                mobDropdown:SetValues(mobsByWorld[world] or {})
-            end
-        else
-            -- Đã qua giai đoạn khởi động, teleport bình thường
-            teleportToWorldAndUpdateMobs(world, false)
-        end
+        teleportToWorldAndUpdateMobs(world)
     end
 })
 
@@ -359,7 +503,6 @@ Tabs.Main:AddDropdown("WorldMobDropdown", {
     end
 })
 
--- Cập nhật lệnh Farm Selected Mob
 Tabs.Main:AddToggle("FarmSelectedMob", {
     Title = "Farm Selected Mob(s)",
     Default = ConfigSystem.CurrentConfig.FarmSelectedMob or false,
@@ -2132,228 +2275,43 @@ end
 AutoSaveConfig()
 setupSaveEvents() -- Thêm dòng này
 
--- Thêm toggle để bật/tắt độ trễ farm
-Tabs.Main:AddToggle("FarmDelay", {
-    Title = "Độ trễ farm (6 giây)",
-    Default = true,
-    Callback = function(state)
-        farmDelayEnabled = state
-        print("Độ trễ farm:", farmDelayEnabled)
-    end
-})
-
--- Cuối cùng, sau khi khởi tạo tất cả, đánh dấu đã qua giai đoạn khởi động
-task.spawn(function()
-    task.wait(1) -- Đợi 1 giây để UI hoàn thành khởi tạo
-    isInitialLoad = false
-    print("Khởi động hoàn tất, đã tắt chế độ khởi động.")
-end)
-
--- Sửa hàm teleportToSelectedEnemy để thêm kiểm tra nil
-local function teleportToSelectedEnemy()
-    -- Kiểm tra hrp, remote và teleportEnabled
-    if not hrp or not remote or not teleportEnabled then
-        print("Không thể bắt đầu farm: thiếu dữ liệu cơ bản")
-        return
-    end
-    
-    -- Thêm độ trễ khi bắt đầu farm nếu cần
-    if farmDelayEnabled then
-        if Fluent then
-            Fluent:Notify({
-                Title = "Farm sẽ bắt đầu sau",
-                Content = "Đang đợi " .. initialFarmDelay .. " giây trước khi bắt đầu farm...",
-                Duration = initialFarmDelay
-            })
-        end
-        task.wait(initialFarmDelay)
-    end
-    
-    while teleportEnabled do
-        local targetFound = false
+-- Thêm hàm khởi động Farm với độ trễ khi mở script
+local function delayedAutoFarmStart()
+    -- Chờ 6 giây trước khi kích hoạt Farm
+    task.spawn(function()
+        -- Thông báo đang đợi khởi động
+        Fluent:Notify({
+            Title = "Farm Selected Mob",
+            Content = "Đang chờ 6 giây để khởi động tự động farm...",
+            Duration = 3
+        })
         
-        -- Kiểm tra nếu danh sách mob trống
-        local hasMobs = false
-        if selectedMobs then
-            for _, _ in pairs(selectedMobs) do
-                hasMobs = true
-                break
-            end
-        end
+        task.wait(6) -- Đợi 6 giây
         
-        -- Nếu không có mob nào được chọn, thử farm tất cả mob trong world hiện tại
-        if not hasMobs then
-            local target = getNearestEnemy()
-            if target and target.Parent and target:FindFirstChild("HumanoidRootPart") then
-                anticheat()
-                moveToTarget(target)
-                task.wait(0.5)
-                fireShowPetsRemote()
-                
-                remote:FireServer({
-                    {
-                        ["PetPos"] = {},
-                        ["AttackType"] = "All",
-                        ["Event"] = "Attack",
-                        ["Enemy"] = target.Name
-                    },
-                    "\7"
+        -- Kiểm tra cấu hình đã lưu và kích hoạt nếu cần
+        if ConfigSystem.CurrentConfig.FarmSelectedMob then
+            local farmToggle = Fluent.Options.FarmSelectedMob
+            if farmToggle then
+                -- Thông báo đang bắt đầu
+                Fluent:Notify({
+                    Title = "Farm Selected Mob",
+                    Content = "Bắt đầu tự động farm...",
+                    Duration = 3
                 })
                 
-                while teleportEnabled and target.Parent and not isEnemyDead(target) do
-                    task.wait(0.1)
-                end
-                
-                killedNPCs[target.Name] = true
-                targetFound = true
-            end
-        else
-            -- Lặp qua từng mob được chọn - đảm bảo selectedMobs là table
-            for mobName, _ in pairs(selectedMobs or {}) do
-                local target = getNearestSelectedEnemy(mobName)
-                if target and target.Parent and target:FindFirstChild("HumanoidRootPart") then
-                    anticheat()
-                    moveToTarget(target)
-                    task.wait(0.5)
-                    fireShowPetsRemote()
-                    
-                    remote:FireServer({
-                        {
-                            ["PetPos"] = {},
-                            ["AttackType"] = "All",
-                            ["Event"] = "Attack",
-                            ["Enemy"] = target.Name
-                        },
-                        "\7"
-                    })
-                    
-                    while teleportEnabled and target.Parent and not isEnemyDead(target) do
-                        task.wait(0.1)
-                    end
-                    
-                    killedNPCs[target.Name] = true
-                    targetFound = true
-                    break -- Tiếp tục với mob tiếp theo trong vòng lặp tiếp theo
-                end
+                -- Đặt giá trị toggle và kích hoạt
+                farmToggle:SetValue(true)
+                teleportEnabled = true
+                damageEnabled = true
+                killedNPCs = {}
+                task.spawn(teleportToSelectedEnemy)
             end
         end
-        
-        if not targetFound then
-            task.wait(0.2) -- Đợi trước khi kiểm tra lại
-        end
-    end
-end
-
--- Sửa hàm attackEnemy để thêm kiểm tra nil
-local function attackEnemy()
-    if not remote or not damageEnabled then
-        print("Không thể bắt đầu tấn công: thiếu dữ liệu cơ bản")
-        return
-    end
-    
-    while damageEnabled do
-        local targetEnemy = getNearestEnemy()
-        if targetEnemy then
-            local args = {
-                [1] = {
-                    [1] = {
-                        ["Event"] = "PunchAttack",
-                        ["Enemy"] = targetEnemy.Name
-                    },
-                    [2] = "\4"
-                }
-            }
-            remote:FireServer(unpack(args))
-        end
-        task.wait(1)
-    end
-end
-
--- Farm Method Selection Dropdown
-local Fluent
-local SaveManager
-local InterfaceManager
-
-local success, err = pcall(function()
-    Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
-    SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
-    InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
-end)
-
-if not success then
-    warn("Lỗi khi tải thư viện Fluent: " .. tostring(err))
-    -- Thử tải từ URL dự phòng
-    pcall(function()
-        Fluent = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Fluent.lua"))()
-        SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
-        InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
     end)
 end
 
-if not Fluent then
-    error("Không thể tải thư viện Fluent. Vui lòng kiểm tra kết nối internet hoặc executor.")
-    return
-end
-
-local Window = Fluent:CreateWindow({
-    Title = "Kaihon Hub | Arise Crossover",
-    SubTitle = "",
-    TabWidth = 140,
-    Size = UDim2.fromOffset(450, 350),
-    Acrylic = false,
-    Theme = "Darker",
-    MinimizeKey = Enum.KeyCode.LeftControl
-})
-
-local Tabs = {
-    Discord = Window:AddTab({ Title = "INFO", Icon = ""}),
-    Main = Window:AddTab({ Title = "Main", Icon = "" }),
-    tp = Window:AddTab({ Title = "Teleports", Icon = "" }),
-    mount = Window:AddTab({ Title = "Mount Location/farm", Icon = "" }),
-    dungeon = Window:AddTab({ Title = "Dungeon ", Icon = "" }),
-    pets = Window:AddTab({ Title = "Pets ", Icon = "" }),
-    Player = Window:AddTab({ Title = "Player", Icon = "" }),
-    misc = Window:AddTab({ Title = "misc", Icon = "" }),
-    Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
-}
-
--- Tạo mapping giữa các map và danh sách mob tương ứng
-local mobsByWorld = {
-    ["SoloWorld"] = {"Soondoo", "Gonshee", "Daek", "Longin", "Anders", "Largalgan"},
-    ["NarutoWorld"] = {"Snake Man", "Blossom", "Black Crow"},
-    ["OPWorld"] = {"Neptune", "Jollyn", "Namyura", "KayAy", "Zoro"},
-    ["BleachWorld"] = {"Orihime", "Chad", "Ishida", "Rukia", "Toshiro"},
-    ["BCWorld"] = {"Gojo", "Yuta", "Yuji", "Nobara", "Megumi"},
-    ["JojoWorld"] = {"Jotaro", "Josuke", "Giorno", "Jolyne", "Johnny"}
-}
-
--- Mapping từ world name đến spawn code
-local worldToSpawnCode = {
-    ["SoloWorld"] = "SoloWorld",
-    ["NarutoWorld"] = "NarutoWorld", 
-    ["OPWorld"] = "OPWorld",
-    ["BleachWorld"] = "BleachWorld",
-    ["BCWorld"] = "BCWorld",
-    ["JojoWorld"] = "JojoWorld"
-}
-
--- Thêm biến để quản lý khởi động tự động
-local isInitialLoad = true
-local farmDelayEnabled = true  -- Bật trễ khi farm
-local initialFarmDelay = 6     -- Đặt độ trễ 6 giây
-
--- Thay đổi cấu trúc dữ liệu để selectedMobs luôn là table
-local selectedWorld = ConfigSystem.CurrentConfig.SelectedWorld or "SoloWorld" -- Default world
-local selectedMobs = {}
-
--- Đảm bảo SelectedMobs luôn là table
-if ConfigSystem.CurrentConfig.SelectedMobs then
-    selectedMobs = ConfigSystem.CurrentConfig.SelectedMobs
-else
-    selectedMobs = {}
-    ConfigSystem.CurrentConfig.SelectedMobs = selectedMobs
-    ConfigSystem.SaveConfig()
-end
+-- Gọi hàm khởi động Farm với độ trễ
+delayedAutoFarmStart()
 
 
 
