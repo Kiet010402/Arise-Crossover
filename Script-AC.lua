@@ -105,6 +105,13 @@ local function getNearestSelectedEnemy(specificMob)
     local nearestEnemy = nil
     local shortestDistance = math.huge
     local playerPosition = hrp.Position
+    
+    -- Debug: In ra mob đang tìm kiếm
+    if specificMob then
+        print("Đang tìm mob cụ thể:", specificMob)
+    else
+        print("Đang tìm bất kỳ mob nào trong danh sách đã chọn")
+    end
 
     for _, enemy in ipairs(enemiesFolder:GetChildren()) do
         if enemy:IsA("Model") and enemy:FindFirstChild("HumanoidRootPart") then
@@ -113,16 +120,20 @@ local function getNearestSelectedEnemy(specificMob)
                 local title = healthBar.Main.Title
                 if title and title:IsA("TextLabel") then
                     local mobName = title.ContentText
+                    print("Kiểm tra mob:", mobName) -- Debug
+                    
                     -- Nếu mob cụ thể được chỉ định, chỉ tìm mob đó
                     -- Nếu không, tìm bất kỳ mob nào trong danh sách được chọn
                     local isSelected = false
                     if specificMob then
                         isSelected = (mobName == specificMob)
+                        if isSelected then print("Tìm thấy mob mục tiêu:", mobName) end -- Debug
                     else
                         if selectedMobs then
                             for mob, _ in pairs(selectedMobs) do
                                 if mobName == mob then
                                     isSelected = true
+                                    print("Tìm thấy mob từ danh sách đã chọn:", mobName) -- Debug
                                     break
                                 end
                             end
@@ -135,6 +146,7 @@ local function getNearestSelectedEnemy(specificMob)
                         if distance < shortestDistance then
                             shortestDistance = distance
                             nearestEnemy = enemy
+                            print("Đã chọn mob gần nhất:", mobName, "với khoảng cách:", distance) -- Debug
                         end
                     end
                 end
@@ -255,17 +267,20 @@ local function teleportToSelectedEnemy()
     while teleportEnabled do
         local targetFound = false
         
-        -- Kiểm tra nếu danh sách mob trống
-        local hasMobs = false
+        -- Đếm số lượng mob đã chọn
+        local mobCount = 0
         if selectedMobs then
             for _, _ in pairs(selectedMobs) do
-                hasMobs = true
-                break
+                mobCount = mobCount + 1
             end
         end
         
+        -- In ra debug
+        print("Số lượng mob đã chọn:", mobCount)
+        
         -- Nếu không có mob nào được chọn, thử farm tất cả mob trong world hiện tại
-        if not hasMobs then
+        if mobCount == 0 then
+            print("Không có mob nào được chọn, farm tất cả mob")
             local target = getNearestEnemy()
             if target and target.Parent then
                 anticheat()
@@ -292,36 +307,41 @@ local function teleportToSelectedEnemy()
             end
         else
             -- Lặp qua từng mob được chọn - đảm bảo selectedMobs là table
-            for mobName, _ in pairs(selectedMobs or {}) do
-                local target = getNearestSelectedEnemy(mobName)
-                if target and target.Parent then
-                    anticheat()
-                    moveToTarget(target)
-                    task.wait(0.5)
-                    fireShowPetsRemote()
-                    
-                    remote:FireServer({
-                        {
-                            ["PetPos"] = {},
-                            ["AttackType"] = "All",
-                            ["Event"] = "Attack",
-                            ["Enemy"] = target.Name
-                        },
-                        "\7"
-                    })
-                    
-                    while teleportEnabled and target.Parent and not isEnemyDead(target) do
-                        task.wait(0.1)
+            for mobName, isSelected in pairs(selectedMobs or {}) do
+                if isSelected then -- Chỉ farm mob đã được chọn (giá trị là true)
+                    print("Đang tìm mob:", mobName)
+                    local target = getNearestSelectedEnemy(mobName)
+                    if target and target.Parent then
+                        print("Đã tìm thấy mob:", mobName)
+                        anticheat()
+                        moveToTarget(target)
+                        task.wait(0.5)
+                        fireShowPetsRemote()
+                        
+                        remote:FireServer({
+                            {
+                                ["PetPos"] = {},
+                                ["AttackType"] = "All",
+                                ["Event"] = "Attack",
+                                ["Enemy"] = target.Name
+                            },
+                            "\7"
+                        })
+                        
+                        while teleportEnabled and target.Parent and not isEnemyDead(target) do
+                            task.wait(0.1)
+                        end
+                        
+                        killedNPCs[target.Name] = true
+                        targetFound = true
+                        break -- Tiếp tục với mob tiếp theo trong vòng lặp tiếp theo
                     end
-                    
-                    killedNPCs[target.Name] = true
-                    targetFound = true
-                    break -- Tiếp tục với mob tiếp theo trong vòng lặp tiếp theo
                 end
             end
         end
         
         if not targetFound then
+            print("Không tìm thấy mob nào, đợi 0.2 giây")
             task.wait(0.2) -- Đợi trước khi kiểm tra lại
         end
     end
@@ -495,10 +515,27 @@ Tabs.Main:AddDropdown("WorldMobDropdown", {
     Default = selectedMobs or {},
     Callback = function(mobs)
         if mobs then
-            selectedMobs = mobs
-            ConfigSystem.CurrentConfig.SelectedMobs = mobs
+            -- Reset danh sách mob đã chọn
+            selectedMobs = {}
+            
+            -- Lưu các mob được chọn vào table
+            for mob, isSelected in pairs(mobs) do
+                if isSelected then
+                    selectedMobs[mob] = true
+                    print("Đã chọn mob:", mob) -- Debug
+                end
+            end
+            
+            ConfigSystem.CurrentConfig.SelectedMobs = selectedMobs
             ConfigSystem.SaveConfig()
             killedNPCs = {} -- Đặt lại danh sách NPC đã tiêu diệt khi thay đổi mob
+            
+            -- In ra danh sách mob đã chọn để debug
+            local selectedMobNames = {}
+            for mobName, _ in pairs(selectedMobs) do
+                table.insert(selectedMobNames, mobName)
+            end
+            print("Danh sách mob đã chọn:", table.concat(selectedMobNames, ", "))
         end
     end
 })
