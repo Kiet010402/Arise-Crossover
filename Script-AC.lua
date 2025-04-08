@@ -1,1742 +1,2117 @@
--- Arise Crossover - Discord Webhook cho AFKRewards
-local allowedPlaceId = 87039211657390 -- PlaceId mà script được phép chạy
-local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
-local Player = Players.LocalPlayer
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local workspace = game:GetService("Workspace")
 
--- Khởi tạo Rayfield UI
-local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local hrp = character:WaitForChild("HumanoidRootPart")
+local enemiesFolder = workspace:WaitForChild("__Main"):WaitForChild("__Enemies"):WaitForChild("Client")
+local remote = ReplicatedStorage:WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent")
 
--- Sử dụng tên người chơi để tạo file cấu hình riêng cho từng tài khoản
-local playerName = Player.Name:gsub("[^%w_]", "_") -- Loại bỏ ký tự đặc biệt
-local CONFIG_FILE = "AriseWebhook_" .. playerName .. ".json"
+local teleportEnabled = false
+local killedNPCs = {}
+local dungeonkill = {}
+local selectedMobName = ""
+local movementMethod = "Tween" -- Phương thức di chuyển mặc định
+local farmingStyle = "Default" -- Phong cách farm mặc định
 
--- Biến kiểm soát trạng thái script
-local scriptRunning = true
-
--- Đọc cấu hình từ file (nếu có)
-local function loadConfig()
-    local success, result = pcall(function()
-        if readfile and isfile and isfile(CONFIG_FILE) then
-            return HttpService:JSONDecode(readfile(CONFIG_FILE))
-        end
-        return nil
-    end)
-    
-    if success and result then
-        print("Đã tải cấu hình từ file cho tài khoản " .. playerName)
-        return result
-    else
-        print("Không tìm thấy file cấu hình cho tài khoản " .. playerName)
-        return nil
-    end
-end
-
--- Lưu cấu hình xuống file
-local function saveConfig(config)
-    local success, err = pcall(function()
-        if writefile then
-            writefile(CONFIG_FILE, HttpService:JSONEncode(config))
-            return true
-        end
-        return false
-    end)
-    
-    if success then
-        print("Đã lưu cấu hình vào file " .. CONFIG_FILE)
-        return true
-    else
-        warn("Lỗi khi lưu cấu hình: " .. tostring(err))
-        return false
-    end
-end
-
--- Tắt hoàn toàn script (định nghĩa hàm này trước khi được gọi)
-local function shutdownScript()
-    print("Đang tắt script Arise Webhook...")
-    scriptRunning = false
-    
-    -- Lưu cấu hình trước khi tắt
-    saveConfig(CONFIG)
-    
-    -- Hủy bỏ tất cả các kết nối sự kiện (nếu có)
-    for _, connection in pairs(connections or {}) do
-        if typeof(connection) == "RBXScriptConnection" and connection.Connected then
-            connection:Disconnect()
-        end
-    end
-    
-    -- Đóng cửa sổ Rayfield
-    Rayfield:Destroy()
-    
-    print("Script Arise Webhook đã tắt hoàn toàn")
-end
-
--- Cấu hình Webhook Discord của bạn
-local WEBHOOK_URL = "YOUR_URL" -- Giá trị mặc định
-
--- Tải cấu hình từ file (nếu có)
-local savedConfig = loadConfig()
-if savedConfig then
-    if savedConfig.WEBHOOK_URL then
-        WEBHOOK_URL = savedConfig.WEBHOOK_URL
-        print("Đã tải URL webhook từ cấu hình: " .. WEBHOOK_URL:sub(1, 30) .. "...")
-    end
-    
-    -- Tải tùy chọn AUTO_TELEPORT từ cấu hình nếu có
-    local autoTeleportSaved = savedConfig.AUTO_TELEPORT
-    if autoTeleportSaved ~= nil then
-        print("Đã tải cấu hình AUTO_TELEPORT: " .. tostring(autoTeleportSaved))
-    end
-end
-
--- Tùy chọn định cấu hình
-local CONFIG = {
-    WEBHOOK_URL = WEBHOOK_URL,
-    WEBHOOK_COOLDOWN = savedConfig and savedConfig.WEBHOOK_COOLDOWN or 3,
-    SHOW_UI = savedConfig and savedConfig.SHOW_UI ~= nil and savedConfig.SHOW_UI or true,
-    UI_POSITION = UDim2.new(0.7, 0, 0.05, 0),
-    ACCOUNT_NAME = playerName, -- Lưu tên tài khoản vào cấu hình
-    AUTO_TELEPORT = savedConfig and savedConfig.AUTO_TELEPORT ~= nil and savedConfig.AUTO_TELEPORT or false -- Sử dụng giá trị đã lưu
+-- Hệ thống lưu trữ mới
+local ConfigSystem = {}
+ConfigSystem.FileName = "AriseConfigV2_" .. player.Name .. ".json"
+ConfigSystem.DefaultConfig = {
+    SelectedMobName = "",
+    FarmSelectedMob = false,
+    AutoFarmNearestNPCs = false,
+    MainAutoDestroy = false,
+    MainAutoArise = false,
+    FarmingMethod = "Tween",
+    DamageMobs = false
 }
+ConfigSystem.CurrentConfig = {}
 
--- Lưu cấu hình hiện tại
-saveConfig(CONFIG)
-
--- Lưu trữ phần thưởng đã nhận để tránh gửi trùng lặp
-local receivedRewards = {}
-
--- Theo dõi tổng phần thưởng
-local totalRewards = {}
-
--- Lưu trữ số lượng item đã kiểm tra từ RECEIVED
-local playerItems = {}
-
--- Cooldown giữa các lần gửi webhook (giây)
-local WEBHOOK_COOLDOWN = CONFIG.WEBHOOK_COOLDOWN
-local lastWebhookTime = 0
-
--- Đang xử lý một phần thưởng (tránh xử lý đồng thời)
-local isProcessingReward = false
-
--- Lưu danh sách các kết nối sự kiện để có thể ngắt kết nối khi tắt script
-local connections = {}
-
--- Tạo khai báo trước các hàm để tránh lỗi gọi nil
-local findRewardsUI
-local findReceivedFrame
-local findNewRewardNotification
-local checkNewRewards
-local checkReceivedRewards
-local readActualItemQuantities
-local sendTestWebhook
-
--- Khởi tạo Window Rayfield
-local Window = Rayfield:CreateWindow({
-    Name = "Arise Webhook - " .. playerName,
-    LoadingTitle = "Arise Crossover",
-    LoadingSubtitle = "by DuongTuan",
-    ConfigurationSaving = {
-        Enabled = true,
-        FolderName = "AriseWebhook",
-        FileName = "AriseWebhook_" .. playerName
-    },
-    KeySystem = false
-})
-
--- Tạo Tab chính
-local MainTab = Window:CreateTab("Webhook", 4483362458) -- Sử dụng icon mặc định
-
--- Tạo Input cho URL Webhook
-local WebhookInput = MainTab:CreateInput({
-    Name = "Discord Webhook URL",
-    PlaceholderText = "Nhập URL webhook Discord...",
-    RemoveTextAfterFocusLost = false,
-    CurrentValue = CONFIG.WEBHOOK_URL ~= "YOUR_URL" and CONFIG.WEBHOOK_URL or "",
-    Flag = "WebhookURL",
-    Callback = function(Text)
-        if Text ~= "" and Text ~= CONFIG.WEBHOOK_URL then
-            CONFIG.WEBHOOK_URL = Text
-            WEBHOOK_URL = Text -- Cập nhật biến toàn cục
-            
-            -- Lưu vào file cấu hình
-            if saveConfig(CONFIG) then
-                Rayfield:Notify({
-                    Title = "Thành công",
-                    Content = "Đã lưu URL mới cho " .. playerName,
-                    Duration = 3,
-                    Image = "check", -- Lucide icon
-                })
-            else
-                Rayfield:Notify({
-                    Title = "Lưu ý",
-                    Content = "Đã lưu URL mới (không lưu được file)",
-                    Duration = 3,
-                    Image = "alert-triangle", -- Lucide icon
-                })
-            end
-        end
-    end,
-})
-
--- Tạo Slider cho Cooldown
-local CooldownSlider = MainTab:CreateSlider({
-    Name = "Thời gian cooldown giữa các webhook",
-    Range = {1, 10},
-    Increment = 1,
-    Suffix = "giây",
-    CurrentValue = CONFIG.WEBHOOK_COOLDOWN,
-    Flag = "WebhookCooldown",
-    Callback = function(Value)
-        CONFIG.WEBHOOK_COOLDOWN = Value
-        WEBHOOK_COOLDOWN = Value
-        saveConfig(CONFIG)
-    end,
-})
-
--- Tạo nút Test Webhook
-local TestButton = MainTab:CreateButton({
-    Name = "Kiểm tra kết nối Webhook",
-    Callback = function()
-        -- Hiển thị thông báo đang kiểm tra
-        Rayfield:Notify({
-            Title = "Đang kiểm tra",
-            Content = "Đang gửi webhook thử nghiệm...",
-            Duration = 2,
-            Image = "loader", -- Lucide icon
-        })
-        
-        -- Thử gửi webhook kiểm tra
-        local success = sendTestWebhook("Kiểm tra kết nối từ Arise Crossover Rewards Tracker")
-        
-        if success then
-            Rayfield:Notify({
-                Title = "Thành công",
-                Content = "Kiểm tra webhook thành công!",
-                Duration = 3,
-                Image = "check", -- Lucide icon
-            })
-        else
-            Rayfield:Notify({
-                Title = "Lỗi",
-                Content = "Kiểm tra webhook thất bại, vui lòng kiểm tra URL!",
-                Duration = 5,
-                Image = "x", -- Lucide icon
-            })
-        end
-    end,
-})
-
--- Tạo Toggle hiển thị/ẩn UI
-local UIToggle = MainTab:CreateToggle({
-    Name = "Hiển thị UI",
-    CurrentValue = CONFIG.SHOW_UI,
-    Flag = "ShowUI",
-    Callback = function(Value)
-        CONFIG.SHOW_UI = Value
-        saveConfig(CONFIG)
-    end,
-})
-
--- Tạo Tab thông tin phần thưởng
-local RewardsTab = Window:CreateTab("Phần thưởng", "gift") -- Sử dụng icon Lucide
-
--- Hiển thị thông tin tổng phần thưởng
-local RewardsInfo = RewardsTab:CreateSection("Thông tin phần thưởng")
-
--- Text hiển thị tổng phần thưởng (sẽ được cập nhật)
-local TotalRewardsText = ""
-
--- Tạo một paragraph để hiển thị tổng phần thưởng
-local TotalRewardsLabel = RewardsTab:CreateParagraph({
-    Title = "Tổng phần thưởng hiện có",
-    Content = "Đang tải thông tin phần thưởng..."
-})
-
--- Tạo button để làm mới thông tin phần thưởng
-local RefreshButton = RewardsTab:CreateButton({
-    Name = "Làm mới thông tin phần thưởng",
-    Callback = function()
-        -- Đọc số lượng item hiện tại
-        readActualItemQuantities()
-        
-        -- Cập nhật thông tin hiển thị
-        local rewardsText = getTotalRewardsText()
-        TotalRewardsText = rewardsText
-        TotalRewardsLabel:Set({
-            Title = "Tổng phần thưởng hiện có", 
-            Content = rewardsText
-        })
-        
-        Rayfield:Notify({
-            Title = "Đã làm mới",
-            Content = "Đã cập nhật thông tin phần thưởng",
-            Duration = 2,
-            Image = "refresh-cw", -- Lucide icon
-        })
-    end,
-})
-
--- Tạo button để xóa hết phần thưởng đã lưu
-local ClearButton = RewardsTab:CreateButton({
-    Name = "Xóa thông tin phần thưởng đã lưu",
-    Callback = function()
-        -- Xóa hết thông tin phần thưởng đã lưu
-        receivedRewards = {}
-        totalRewards = {}
-        playerItems = {}
-        
-        -- Cập nhật lại thông tin hiển thị
-        TotalRewardsLabel:Set({
-            Title = "Tổng phần thưởng hiện có",
-            Content = "Đã xóa thông tin phần thưởng"
-        })
-        
-        Rayfield:Notify({
-            Title = "Đã xóa",
-            Content = "Đã xóa toàn bộ thông tin phần thưởng đã lưu",
-            Duration = 3,
-            Image = "trash-2", -- Lucide icon
-        })
-    end,
-})
-
--- Tab cài đặt
-local SettingsTab = Window:CreateTab("Cài đặt", "settings") -- Sử dụng icon Lucide
-
--- Tạo button để tắt script
-local ShutdownButton = SettingsTab:CreateButton({
-    Name = "Tắt script",
-    Callback = function()
-        Rayfield:Notify({
-            Title = "Xác nhận",
-            Content = "Bạn có chắc chắn muốn tắt script?",
-            Duration = 5,
-            Image = "alert-triangle", -- Lucide icon
-            Actions = {
-                Ignore = {
-                    Name = "Hủy",
-                    Callback = function()
-                        -- Không làm gì
-                    end
-                },
-                Confirm = {
-                    Name = "Tắt",
-                    Callback = function()
-                        shutdownScript() -- Tắt hoàn toàn script
-                    end
-                }
-            }
-        })
-    end,
-})
-
--- Tạo Tab Teleport
-local TeleportTab = Window:CreateTab("Teleport", "map-pin") -- Sử dụng icon Lucide
-
--- Tạo Toggle cho Auto Teleport
-local AutoTeleportToggle = TeleportTab:CreateToggle({
-    Name = "Auto TP to AFK",
-    CurrentValue = CONFIG.AUTO_TELEPORT or false,
-    Flag = "AutoTeleport",
-    Callback = function(Value)
-        CONFIG.AUTO_TELEPORT = Value
-        saveConfig(CONFIG)
-    end,
-})
-
--- Tạo UI cấu hình Webhook (thay thế hàm cũ bằng các phần tử Rayfield)
-local function createWebhookUI()
-    -- Không cần tạo UI tùy chỉnh nữa vì đã dùng Rayfield
-    print("Đã chuyển sang sử dụng Rayfield UI")
-    
-    -- Đọc số lượng item hiện tại và cập nhật hiển thị
-    spawn(function()
-        wait(1) -- Chờ UI khởi tạo xong
-        readActualItemQuantities()
-        local rewardsText = getTotalRewardsText()
-        TotalRewardsText = rewardsText
-        TotalRewardsLabel:Set({
-            Title = "Tổng phần thưởng hiện có", 
-            Content = rewardsText
-        })
-    end)
-    
-    return nil -- Không cần trả về UI nữa
-end
-
--- Mẫu regex để trích xuất số lượng trong ngoặc
-local function extractQuantity(text)
-    -- Tìm số lượng trong ngoặc, ví dụ: GEMS(10)
-    local quantity = text:match("%((%d+)%)")
-    if quantity then
-        return tonumber(quantity)
-    end
-    return nil
-end
-
--- Tạo một ID duy nhất cho phần thưởng mà không dùng timestamp
-local function createUniqueRewardId(rewardText)
-    -- Loại bỏ khoảng trắng và chuyển về chữ thường để so sánh nhất quán
-    local id = rewardText:gsub("%s+", ""):lower()
-    
-    -- Loại bỏ tiền tố "RECEIVED:" nếu có
-    id = id:gsub("received:", "")
-    
-    -- Loại bỏ tiền tố "YOU GOT A NEW REWARD!" nếu có
-    id = id:gsub("yougotanewreward!", "")
-    
-    -- Loại bỏ các tiền tố % (để xử lý phần thưởng dạng "25% 1,000 GEMS")
-    id = id:gsub("%d+%%", "")
-    
-    return id
-end
-
--- Kiểm tra xem một phần thưởng có phải là CASH không
-local function isCashReward(rewardText)
-    return rewardText:upper():find("CASH") ~= nil
-end
-
--- Phân tích chuỗi phần thưởng để lấy số lượng và loại
-local function parseReward(rewardText)
-    -- Loại bỏ các tiền tố không cần thiết
-    rewardText = rewardText:gsub("RECEIVED:%s*", "")
-    rewardText = rewardText:gsub("YOU GOT A NEW REWARD!%s*", "")
-    
-    -- Xử lý đặc biệt cho phần thưởng dạng phần trăm (ví dụ: 25% 1,000 GEMS)
-    local percentMatch = rewardText:match("(%d+)%%%s+([%d,]+)%s+([%w%s]+)")
-    if percentMatch then
-        local percent = rewardText:match("(%d+)%%")
-        local baseAmount = rewardText:match("([%d,]+)%s+[%w%s]+"):gsub(",", "")
-        local itemType = rewardText:match("%d+%%%s+[%d,]+%s+([%w%s]+)")
-        
-        if percent and baseAmount and itemType then
-            percent = tonumber(percent)
-            baseAmount = tonumber(baseAmount)
-            itemType = itemType:gsub("^%s+", ""):gsub("%s+$", "") -- Xóa khoảng trắng thừa
-            
-            -- Tính toán số lượng thực tế (percent% của baseAmount)
-            local amount = math.floor(baseAmount * percent / 100)
-            
-            return amount, itemType
-        end
-    end
-    
-    -- Xử lý trường hợp thông thường
-    local amount, itemType = rewardText:match("(%d+)%s+([%w%s]+)")
-    
-    if amount and itemType then
-        amount = tonumber(amount)
-        itemType = itemType:gsub("^%s+", ""):gsub("%s+$", "") -- Xóa khoảng trắng thừa
-        
-        -- Kiểm tra xem có số lượng trong ngoặc không
-        local quantityInBrackets = itemType:match("%((%d+)%)$")
-        if quantityInBrackets then
-            -- Loại bỏ phần số lượng trong ngoặc khỏi tên item
-            itemType = itemType:gsub("%(%d+%)$", ""):gsub("%s+$", "")
-        end
-        
-        return amount, itemType
-    else
-        return nil, rewardText
-    end
-end
-
--- Tìm UI phần thưởng
-findRewardsUI = function()
-    -- Tìm trong PlayerGui
-    for _, gui in pairs(Player.PlayerGui:GetChildren()) do
-        if gui:IsA("ScreenGui") then
-            -- Tìm frame chứa các phần thưởng
-            local rewardsFrame = gui:FindFirstChild("REWARDS", true) 
-            if rewardsFrame then
-                return rewardsFrame.Parent
-            end
-            
-            -- Tìm theo tên khác nếu không tìm thấy
-            for _, obj in pairs(gui:GetDescendants()) do
-                if obj:IsA("TextLabel") and (obj.Text == "REWARDS" or obj.Text:find("REWARD")) then
-                    return obj.Parent
-                end
-            end
-        end
-    end
-    return nil
-end
-
--- Theo dõi phần thưởng "RECEIVED"
-findReceivedFrame = function()
-    -- Thêm thông báo debug
-    print("Đang tìm kiếm UI RECEIVED...")
-    
-    for _, gui in pairs(Player.PlayerGui:GetChildren()) do
-        if gui:IsA("ScreenGui") then
-            -- Phương pháp 1: Tìm trực tiếp label RECEIVED
-            for _, obj in pairs(gui:GetDescendants()) do
-                if obj:IsA("TextLabel") and obj.Text == "RECEIVED" then
-                    print("Đã tìm thấy label RECEIVED qua TextLabel")
-                    return obj.Parent
-                end
-            end
-            
-            -- Phương pháp 2: Tìm ImageLabel hoặc Frame có tên là RECEIVED
-            local receivedFrame = gui:FindFirstChild("RECEIVED", true)
-            if receivedFrame then
-                print("Đã tìm thấy RECEIVED qua FindFirstChild")
-                return receivedFrame.Parent
-            end
-            
-            -- Phương pháp 3: Tìm các Frame chứa phần thưởng 
-            for _, frame in pairs(gui:GetDescendants()) do
-                if (frame:IsA("Frame") or frame:IsA("ScrollingFrame")) and
-                   (frame.Name:upper():find("RECEIVED") or 
-                    (frame.Name:upper():find("REWARD") and not frame.Name:upper():find("REWARDS"))) then
-                    print("Đã tìm thấy RECEIVED qua tên Frame: " .. frame.Name)
-                    return frame
-                end
-            end
-            
-            -- Phương pháp 4: Tìm các phần thưởng đặc trưng trong RECEIVED
-            for _, frame in pairs(gui:GetDescendants()) do
-                if frame:IsA("Frame") or frame:IsA("ImageLabel") then
-                    -- Đếm số lượng item trong frame
-                    local itemCount = 0
-                    local hasPercentage = false
-                    
-                    for _, child in pairs(frame:GetDescendants()) do
-                        if child:IsA("TextLabel") then
-                            -- Kiểm tra phần trăm (dấu hiệu của item)
-                            if child.Text:match("^%d+%.?%d*%%$") then
-                                hasPercentage = true
-                            end
-                            
-                            -- Kiểm tra "POWDER", "GEMS", "TICKETS" (dấu hiệu của item)
-                            if child.Text:find("POWDER") or child.Text:find("GEMS") or child.Text:find("TICKETS") then
-                                itemCount = itemCount + 1
-                            end
-                        end
-                    end
-                    
-                    -- Nếu frame chứa nhiều loại item và có phần trăm, có thể là RECEIVED
-                    if itemCount >= 2 and hasPercentage and not frame.Name:upper():find("REWARDS") then
-                        print("Đã tìm thấy RECEIVED qua việc phân tích nội dung: " .. frame.Name)
-                        return frame
-                    end
-                end
-            end
-        end
-    end
-    
-    print("KHÔNG thể tìm thấy UI RECEIVED, tiếp tục tìm với cách khác...")
-    
-    -- Phương pháp cuối: Tìm một frame bất kỳ chứa TextLabel "POWDER", không thuộc REWARDS
-    for _, gui in pairs(Player.PlayerGui:GetChildren()) do
-        if gui:IsA("ScreenGui") then
-            for _, frame in pairs(gui:GetDescendants()) do
-                if (frame:IsA("Frame") or frame:IsA("ImageLabel")) and not frame.Name:upper():find("REWARDS") then
-                    for _, child in pairs(frame:GetDescendants()) do
-                        if child:IsA("TextLabel") and 
-                           (child.Text:find("POWDER") or child.Text:find("GEMS")) and
-                           not frame:FindFirstChild("REWARDS", true) then
-                            local parentName = frame.Parent and frame.Parent.Name or "unknown"
-                            print("Tìm thấy frame có thể là RECEIVED: " .. frame.Name .. " (Parent: " .. parentName .. ")")
-                            return frame
-                        end
-                    end
-                end
-            end
-        end
-    end
-    
-    return nil
-end
-
--- Tìm frame thông báo phần thưởng mới "YOU GOT A NEW REWARD!"
-findNewRewardNotification = function()
-    for _, gui in pairs(Player.PlayerGui:GetChildren()) do
-        if gui:IsA("ScreenGui") then
-            for _, obj in pairs(gui:GetDescendants()) do
-                if obj:IsA("TextLabel") and obj.Text:find("YOU GOT A NEW REWARD") then
-                    return obj.Parent
-                end
-            end
-        end
-    end
-    return nil
-end
-
--- Đọc số lượng item thực tế từ UI RECEIVED
-readActualItemQuantities = function()
-    local receivedUI = findReceivedFrame()
-    if not receivedUI then 
-        print("Không tìm thấy UI RECEIVED để đọc số lượng")
-        return 
-    end
-    
-    print("Đang đọc phần thưởng từ RECEIVED UI: " .. receivedUI:GetFullName())
-    
-    -- Reset playerItems để cập nhật lại
-    playerItems = {}
-    local foundAnyItem = false
-    
-    -- Debug: In ra tất cả con của receivedUI
-    print("Các phần tử con của RECEIVED UI:")
-    for i, child in pairs(receivedUI:GetChildren()) do
-        print("  " .. i .. ": " .. child.Name .. " [" .. child.ClassName .. "]")
-    end
-    
-    for _, itemFrame in pairs(receivedUI:GetChildren()) do
-        if itemFrame:IsA("Frame") or itemFrame:IsA("ImageLabel") then
-            local itemType = ""
-            local baseQuantity = 0
-            local multiplier = 1
-            
-            -- Debug: In thông tin từng frame
-            print("Đang phân tích frame: " .. itemFrame.Name)
-            
-            -- Tìm tên item và số lượng
-            for _, child in pairs(itemFrame:GetDescendants()) do
-                if child:IsA("TextLabel") then
-                    local text = child.Text
-                    print("  TextLabel: '" .. text .. "'")
-                    
-                    -- Cải thiện: Kiểm tra văn bản chứa TIGER
-                    if text:find("TIGER") then
-                        itemType = "TIGER"
-                        print("    Phát hiện TIGER item")
-                        
-                        -- Tìm số lượng trong ngoặc - ví dụ: TIGER(1)
-                        local foundQuantity = extractQuantity(text)
-                        if foundQuantity then
-                            multiplier = foundQuantity
-                            print("    Số lượng TIGER: " .. multiplier)
-                        end
-                        
-                        -- Nếu không tìm được số lượng, giả định là 1
-                        if multiplier <= 0 then
-                            multiplier = 1
-                        end
-                        
-                        -- Nếu không có baseQuantity, giả định là 1
-                        if baseQuantity <= 0 then
-                            baseQuantity = 1
-                        end
-                    -- Thêm xử lý cho TWIN PRISM BLADES
-                    elseif text:find("TWIN PRISM BLADES") then
-                        itemType = "TWIN PRISM BLADES"
-                        print("    Phát hiện TWIN PRISM BLADES item")
-                        
-                        -- Tìm số lượng trong ngoặc - ví dụ: TWIN PRISM BLADES(1)
-                        local foundQuantity = extractQuantity(text)
-                        if foundQuantity then
-                            multiplier = foundQuantity
-                            print("    Số lượng TWIN PRISM BLADES: " .. multiplier)
-                        end
-                        
-                        -- Nếu không tìm được số lượng, giả định là 1
-                        if multiplier <= 0 then
-                            multiplier = 1
-                        end
-                        
-                        -- Nếu không có baseQuantity, giả định là 1
-                        if baseQuantity <= 0 then
-                            baseQuantity = 1
-                        end
-                    -- Thêm xử lý cho ZIRU G
-                    elseif text:find("ZIRU G") then
-                        itemType = "ZIRU G"
-                        print("    Phát hiện ZIRU G item")
-                        
-                        -- Tìm số lượng trong ngoặc - ví dụ: ZIRU G(1)
-                        local foundQuantity = extractQuantity(text)
-                        if foundQuantity then
-                            multiplier = foundQuantity
-                            print("    Số lượng ZIRU G: " .. multiplier)
-                        end
-                        
-                        -- Nếu không tìm được số lượng, giả định là 1
-                        if multiplier <= 0 then
-                            multiplier = 1
-                        end
-                        
-                        -- Nếu không có baseQuantity, giả định là 1
-                        if baseQuantity <= 0 then
-                            baseQuantity = 1
-                        end
-                    -- Thêm xử lý cho COMMON POWDER
-                    elseif text:find("COMMON POWDER") then
-                        itemType = "COMMON POWDER"
-                        print("    Phát hiện COMMON POWDER item")
-                        
-                        -- Tìm số lượng trong ngoặc hoặc trước tên item
-                        local foundQuantity = extractQuantity(text)
-                        if foundQuantity then
-                            multiplier = foundQuantity
-                            print("    Số lượng từ ngoặc: " .. multiplier)
-                        end
-                        
-                        -- Tìm số lượng ở đầu text
-                        local amountPrefix = text:match("^(%d+)%s+")
-                        if amountPrefix then
-                            baseQuantity = tonumber(amountPrefix)
-                            print("    Số lượng cơ bản: " .. baseQuantity)
-                        end
-                    -- Thêm xử lý cho RARE POWDER
-                    elseif text:find("RARE POWDER") then
-                        itemType = "RARE POWDER"
-                        print("    Phát hiện RARE POWDER item")
-                        
-                        -- Tìm số lượng trong ngoặc hoặc trước tên item
-                        local foundQuantity = extractQuantity(text)
-                        if foundQuantity then
-                            multiplier = foundQuantity
-                            print("    Số lượng từ ngoặc: " .. multiplier)
-                        end
-                        
-                        -- Tìm số lượng ở đầu text
-                        local amountPrefix = text:match("^(%d+)%s+")
-                        if amountPrefix then
-                            baseQuantity = tonumber(amountPrefix)
-                            print("    Số lượng cơ bản: " .. baseQuantity)
-                        end
-                    -- Thêm xử lý cho LEGENDARY POWDER
-                    elseif text:find("LEGENDARY POWDER") then
-                        itemType = "LEGENDARY POWDER"
-                        print("    Phát hiện LEGENDARY POWDER item")
-                        
-                        -- Tìm số lượng trong ngoặc hoặc trước tên item
-                        local foundQuantity = extractQuantity(text)
-                        if foundQuantity then
-                            multiplier = foundQuantity
-                            print("    Số lượng từ ngoặc: " .. multiplier)
-                        end
-                        
-                        -- Tìm số lượng ở đầu text
-                        local amountPrefix = text:match("^(%d+)%s+")
-                        if amountPrefix then
-                            baseQuantity = tonumber(amountPrefix)
-                            print("    Số lượng cơ bản: " .. baseQuantity)
-                        end
-                    end
-                    
-                    -- Tìm loại item (GEMS, POWDER, TICKETS, v.v.)
-                    local foundItemType = text:match("(%w+%s*%w*)%s*%(%d+%)") or text:match("(%w+%s*%w*)%s*$")
-                    if foundItemType then
-                        -- Chỉ gán itemType nếu chưa được phát hiện bởi các xử lý đặc biệt ở trên
-                        if itemType == "" then
-                            itemType = foundItemType
-                            print("    Phát hiện loại item: " .. itemType)
-                        end
-                    end
-                    
-                    -- Tìm số lượng trong ngoặc - ví dụ: GEMS(1)
-                    local foundQuantity = extractQuantity(text)
-                    if foundQuantity and multiplier == 1 then  -- Chỉ cập nhật nếu chưa được gán giá trị
-                        multiplier = foundQuantity
-                        print("    Phát hiện số lượng từ ngoặc (multiplier): " .. multiplier)
-                    end
-                    
-                    -- Tìm số lượng đứng trước tên item - ví dụ: 500 GEMS
-                    local amountPrefix = text:match("^(%d+)%s+%w+")
-                    if amountPrefix and baseQuantity == 0 then  -- Chỉ cập nhật nếu chưa được gán giá trị
-                        baseQuantity = tonumber(amountPrefix)
-                        print("    Phát hiện số lượng cơ bản: " .. baseQuantity)
-                    end
-                    
-                    -- Xử lý đặc biệt cho phần thưởng dạng phần trăm (ví dụ: 25% 1,000 GEMS)
-                    local percentMatch = text:match("(%d+)%%%s+([%d,]+)%s+([%w%s]+)")
-                    if percentMatch then
-                        local percent = text:match("(%d+)%%")
-                        local baseAmount = text:match("([%d,]+)%s+[%w%s]+"):gsub(",", "")
-                        local percentItemType = text:match("%d+%%%s+[%d,]+%s+([%w%s]+)")
-                        
-                        if percent and baseAmount and percentItemType then
-                            percent = tonumber(percent)
-                            baseAmount = tonumber(baseAmount)
-                            
-                            -- Tính toán số lượng thực tế (percent% của baseAmount)
-                            baseQuantity = math.floor(baseAmount * percent / 100)
-                            itemType = percentItemType
-                            multiplier = 1  -- Đặt lại multiplier vì đã tính trong baseQuantity
-                            
-                            print("    Phát hiện phần thưởng phần trăm: " .. percent .. "% của " .. baseAmount .. " " .. itemType)
-                            print("    Số lượng tính toán: " .. baseQuantity)
-                        end
-                    end
-                end
-            end
-            
-            -- Tính toán số lượng thực tế bằng cách nhân số lượng cơ bản với hệ số từ ngoặc
-            local finalQuantity = baseQuantity * multiplier
-            print("    Số lượng cuối cùng: " .. baseQuantity .. " x " .. multiplier .. " = " .. finalQuantity)
-            
-            -- Chỉ lưu các phần thưởng không phải CASH và có tên hợp lệ
-            if itemType ~= "" and finalQuantity > 0 and not isCashReward(itemType) then
-                playerItems[itemType] = (playerItems[itemType] or 0) + finalQuantity
-                print("Đã đọc item: " .. finalQuantity .. " " .. itemType .. " (từ " .. baseQuantity .. " x " .. multiplier .. ")")
-                foundAnyItem = true
-            elseif itemType ~= "" and finalQuantity > 0 then
-                print("Bỏ qua item CASH: " .. finalQuantity .. " " .. itemType)
-            end
-        end
-    end
-    
-    -- Cố gắng đọc theo cách khác nếu không tìm thấy item nào
-    if not foundAnyItem then
-        print("Không tìm thấy item nào bằng phương pháp thông thường, thử phương pháp thay thế...")
-        
-        -- Tìm tất cả TextLabel trong receivedUI có chứa GEMS, POWDER, TICKETS, TIGER
-        for _, child in pairs(receivedUI:GetDescendants()) do
-            if child:IsA("TextLabel") then
-                local text = child.Text
-                
-                -- Tìm item có pattern X ITEM_TYPE(Y) hoặc ITEM_TYPE(Y)
-                local baseAmount, itemType, multiplier = text:match("(%d+)%s+([%w%s]+)%((%d+)%)")
-                if baseAmount and itemType and multiplier then
-                    baseAmount = tonumber(baseAmount)
-                    multiplier = tonumber(multiplier)
-                    local finalAmount = baseAmount * multiplier
-                    
-                    if not isCashReward(itemType) then
-                        playerItems[itemType] = (playerItems[itemType] or 0) + finalAmount
-                        print("Phương pháp thay thế - Đã đọc item: " .. finalAmount .. " " .. itemType .. " (từ " .. baseAmount .. " x " .. multiplier .. ")")
-                        foundAnyItem = true
-                    end
-                else
-                    -- Kiểm tra văn bản có chứa TIGER(X), TWIN PRISM BLADES(X) hoặc ZIRU G(X)
-                    local itemType, multiplier = text:match("([%w%s]+)%((%d+)%)")
-                    if itemType and multiplier then
-                        if itemType == "TIGER" or text:find("TIGER") or
-                           itemType == "TWIN PRISM BLADES" or text:find("TWIN PRISM BLADES") or
-                           itemType == "ZIRU G" or text:find("ZIRU G") then
-                            
-                            multiplier = tonumber(multiplier)
-                            if multiplier and multiplier > 0 and not isCashReward(itemType) then
-                                playerItems[itemType] = (playerItems[itemType] or 0) + multiplier
-                                print("Phương pháp thay thế - Đã đọc item đặc biệt: " .. multiplier .. " " .. itemType)
-                                foundAnyItem = true
-                            end
-                        end
-                    end
-                    
-                    -- Phương pháp đơn giản hơn: tìm tên item đặc biệt mà không có định dạng
-                    if text:find("TWIN PRISM BLADES") and not playerItems["TWIN PRISM BLADES"] then
-                        playerItems["TWIN PRISM BLADES"] = (playerItems["TWIN PRISM BLADES"] or 0) + 1
-                        print("Phương pháp thay thế - Đã đọc TWIN PRISM BLADES")
-                        foundAnyItem = true
-                    elseif text:find("ZIRU G") and not playerItems["ZIRU G"] then
-                        playerItems["ZIRU G"] = (playerItems["ZIRU G"] or 0) + 1
-                        print("Phương pháp thay thế - Đã đọc ZIRU G")
-                        foundAnyItem = true
-                    end
-                end
-            end
-        end
-    end
-    
-    -- Thêm: Kiểm tra đặc biệt cho TIGER nếu vẫn chưa thấy
-    if not playerItems["TIGER"] then
-        for _, child in pairs(receivedUI:GetDescendants()) do
-            if child:IsA("TextLabel") and child.Text:find("TIGER") then
-                print("Phát hiện TIGER thông qua kiểm tra đặc biệt: " .. child.Text)
-                -- Tìm số lượng trong ngoặc nếu có
-                local quantity = extractQuantity(child.Text) or 1
-                playerItems["TIGER"] = (playerItems["TIGER"] or 0) + quantity
-                foundAnyItem = true
-            end
-        end
-    end
-    
-    -- Thêm: Kiểm tra đặc biệt cho TWIN PRISM BLADES nếu vẫn chưa thấy
-    if not playerItems["TWIN PRISM BLADES"] then
-        for _, child in pairs(receivedUI:GetDescendants()) do
-            if child:IsA("TextLabel") and child.Text:find("TWIN PRISM BLADES") then
-                print("Phát hiện TWIN PRISM BLADES thông qua kiểm tra đặc biệt: " .. child.Text)
-                -- Tìm số lượng trong ngoặc nếu có
-                local quantity = extractQuantity(child.Text) or 1
-                playerItems["TWIN PRISM BLADES"] = (playerItems["TWIN PRISM BLADES"] or 0) + quantity
-                foundAnyItem = true
-            end
-        end
-    end
-    
-    -- Thêm: Kiểm tra đặc biệt cho ZIRU G nếu vẫn chưa thấy
-    if not playerItems["ZIRU G"] then
-        for _, child in pairs(receivedUI:GetDescendants()) do
-            if child:IsA("TextLabel") and child.Text:find("ZIRU G") then
-                print("Phát hiện ZIRU G thông qua kiểm tra đặc biệt: " .. child.Text)
-                -- Tìm số lượng trong ngoặc nếu có
-                local quantity = extractQuantity(child.Text) or 1
-                playerItems["ZIRU G"] = (playerItems["ZIRU G"] or 0) + quantity
-                foundAnyItem = true
-            end
-        end
-    end
-    
-    -- Hiển thị tất cả các item đã đọc được
-    print("----- Danh sách item hiện có (không bao gồm CASH) -----")
-    if next(playerItems) ~= nil then
-        for itemType, amount in pairs(playerItems) do
-            print(itemType .. ": " .. amount)
-        end
-    else
-        print("Không đọc được bất kỳ item nào từ UI RECEIVED!")
-    end
-    print("------------------------------------------------------")
-    
-    return playerItems
-end
-
--- Cập nhật tổng phần thưởng
-local function updateTotalRewards(rewardText)
-    local amount, itemType = parseReward(rewardText)
-    
-    if amount and itemType then
-        -- Bỏ qua CASH
-        if isCashReward(itemType) then
-            print("Bỏ qua cập nhật CASH: " .. amount .. " " .. itemType)
-            return
-        end
-        
-        if not totalRewards[itemType] then
-            totalRewards[itemType] = amount
-        else
-            totalRewards[itemType] = totalRewards[itemType] + amount
-        end
-        print("Đã cập nhật tổng phần thưởng: " .. amount .. " " .. itemType)
-    end
-end
-
--- Tạo chuỗi tổng hợp tất cả phần thưởng
-local function getTotalRewardsText()
-    local result = "Tổng phần thưởng:\n"
-    
-    -- Đọc số lượng item thực tế từ UI
-    readActualItemQuantities()
-    
-    -- Ưu tiên hiển thị số liệu từ playerItems nếu có
-    if next(playerItems) ~= nil then
-        for itemType, amount in pairs(playerItems) do
-            -- Loại bỏ CASH (thêm biện pháp bảo vệ)
-            if not isCashReward(itemType) then
-                result = result .. "- " .. amount .. " " .. itemType .. "\n"
-            end
-        end
-    else
-        -- Sử dụng totalRewards nếu không đọc được từ UI
-        for itemType, amount in pairs(totalRewards) do
-            -- Loại bỏ CASH (thêm biện pháp bảo vệ)
-            if not isCashReward(itemType) then
-                result = result .. "- " .. amount .. " " .. itemType .. "\n"
-            end
-        end
-    end
-    
-    return result
-end
-
--- Tạo chuỗi hiển thị các phần thưởng vừa nhận
-local function getLatestRewardsText(newRewardInfo)
-    -- Loại bỏ các tiền tố không cần thiết
-    local cleanRewardInfo = newRewardInfo:gsub("RECEIVED:%s*", "")
-    cleanRewardInfo = cleanRewardInfo:gsub("YOU GOT A NEW REWARD!%s*", "")
-    
-    local amount, itemType = parseReward(cleanRewardInfo)
-    local result = "Phần thưởng mới:\n- " .. cleanRewardInfo .. "\n\n"
-    
-    -- Chỉ hiển thị tổng nếu không phải CASH
-    if amount and itemType and playerItems[itemType] and not isCashReward(itemType) then
-        result = result .. "Tổng " .. itemType .. ": " .. playerItems[itemType] .. " (+" .. amount .. ")\n"
-    end
-    
-    return result
-end
-
--- Kiểm tra xem có thể gửi webhook không (cooldown)
-local function canSendWebhook()
-    local currentTime = tick()
-    if currentTime - lastWebhookTime < WEBHOOK_COOLDOWN then
-        return false
-    end
-    return true
-end
-
--- Gửi webhook thử nghiệm để kiểm tra kết nối
-sendTestWebhook = function(customMessage)
-    -- Nếu đang xử lý phần thưởng khác, không gửi webhook thử nghiệm
-    if isProcessingReward then
-        print("Đang xử lý phần thưởng khác, không thể gửi webhook thử nghiệm")
-        return false
-    end
-    
-    -- Đánh dấu đang xử lý
-    isProcessingReward = true
-    
-    local message = customMessage or "Đây là webhook thử nghiệm từ Arise Crossover Rewards Tracker"
-    
-    local data = {
-        content = nil,
-        embeds = {
-            {
-                title = "🔍 Arise Crossover - Webhook Thử Nghiệm",
-                description = message,
-                color = 5814783, -- Màu tím
-                fields = {
-                    {
-                        name = "Thời gian",
-                        value = os.date("%d/%m/%Y %H:%M:%S"),
-                        inline = true
-                    },
-                    {
-                        name = "Người chơi",
-                        value = Player.Name,
-                        inline = true
-                    }
-                },
-                footer = {
-                    text = "Arise Crossover Rewards Tracker - DuongTuan"
-                }
-            }
-        }
-    }
-    
-    -- Chuyển đổi dữ liệu thành chuỗi JSON
-    local jsonData = HttpService:JSONEncode(data)
-    
-    print("Đang gửi webhook thử nghiệm...")
-    
-    -- Sử dụng HTTP request từ executor
+-- Hàm để lưu cấu hình
+ConfigSystem.SaveConfig = function()
     local success, err = pcall(function()
-        -- Synapse X
-        if syn and syn.request then
-            syn.request({
-                Url = CONFIG.WEBHOOK_URL,
-                Method = "POST",
-                Headers = {
-                    ["Content-Type"] = "application/json"
-                },
-                Body = jsonData
-            })
-            print("Đã gửi webhook thử nghiệm qua syn.request")
-        -- KRNL, Script-Ware và nhiều executor khác
-        elseif request then
-            request({
-                Url = CONFIG.WEBHOOK_URL,
-                Method = "POST",
-                Headers = {
-                    ["Content-Type"] = "application/json"
-                },
-                Body = jsonData
-            })
-            print("Đã gửi webhook thử nghiệm qua request")
-        -- Các Executor khác
-        elseif http and http.request then
-            http.request({
-                Url = CONFIG.WEBHOOK_URL,
-                Method = "POST",
-                Headers = {
-                    ["Content-Type"] = "application/json"
-                },
-                Body = jsonData
-            })
-            print("Đã gửi webhook thử nghiệm qua http.request")
-        -- JJSploit và một số executor khác
-        elseif httppost then
-            httppost(CONFIG.WEBHOOK_URL, jsonData)
-            print("Đã gửi webhook thử nghiệm qua httppost")
-        else
-            error("Không tìm thấy HTTP API nào được hỗ trợ bởi executor hiện tại")
+        writefile(ConfigSystem.FileName, game:GetService("HttpService"):JSONEncode(ConfigSystem.CurrentConfig))
+    end)
+    if success then
+        print("Đã lưu cấu hình thành công!")
+    else
+        warn("Lưu cấu hình thất bại:", err)
+    end
+end
+
+-- Hàm để tải cấu hình
+ConfigSystem.LoadConfig = function()
+    local success, content = pcall(function()
+        if isfile(ConfigSystem.FileName) then
+            return readfile(ConfigSystem.FileName)
         end
+        return nil
     end)
     
-    -- Kết thúc xử lý
-    wait(0.5)
-    isProcessingReward = false
-    
-    if success then
-        -- Hiển thị thông báo Rayfield khi gửi thành công
-        Rayfield:Notify({
-            Title = "Thử nghiệm thành công",
-            Content = "Đã gửi webhook thử nghiệm thành công",
-            Duration = 3,
-            Image = "check", -- Lucide icon
-        })
-        print("Đã gửi webhook thử nghiệm thành công")
+    if success and content then
+        local data = game:GetService("HttpService"):JSONDecode(content)
+        ConfigSystem.CurrentConfig = data
         return true
     else
-        -- Hiển thị thông báo Rayfield khi gửi thất bại
-        Rayfield:Notify({
-            Title = "Thử nghiệm thất bại",
-            Content = "Lỗi: " .. tostring(err),
-            Duration = 5,
-            Image = "x", -- Lucide icon
-        })
-        warn("Lỗi gửi webhook thử nghiệm: " .. tostring(err))
+        ConfigSystem.CurrentConfig = table.clone(ConfigSystem.DefaultConfig)
+        ConfigSystem.SaveConfig()
         return false
     end
 end
 
--- Tìm kiếm các phần tử UI ban đầu
-local function findAllUIElements()
-    print("Đang tìm kiếm các phần tử UI...")
-    local rewardsUI = findRewardsUI()
-    local receivedUI = findReceivedFrame()
-    local newRewardUI = findNewRewardNotification()
-    
-    -- Đọc số lượng item hiện tại
-    readActualItemQuantities()
-    
-    -- Kiểm tra thông báo phần thưởng mới trước tiên
-    if newRewardUI then
-        print("Đã tìm thấy thông báo YOU GOT A NEW REWARD!")
-        checkNewRewardNotification(newRewardUI)
-    else
-        print("Chưa tìm thấy thông báo phần thưởng mới")
-        
-        -- Nếu không có thông báo NEW REWARD, kiểm tra REWARDS
-        if rewardsUI then
-            print("Đã tìm thấy UI phần thưởng")
-            checkNewRewards(rewardsUI)
-        else
-            warn("Không tìm thấy UI phần thưởng")
-        end
-    end
-    
-    -- Luôn đọc RECEIVED để cập nhật số lượng item hiện tại
-    if receivedUI then
-        print("Đã tìm thấy UI RECEIVED")
-        checkReceivedRewards(receivedUI)
-    end
-    
-    return rewardsUI, receivedUI, newRewardUI
-end
+-- Tải cấu hình khi khởi động
+ConfigSystem.LoadConfig()
 
--- Theo dõi thay đổi trong PlayerGui
-local playerGuiConnection
-playerGuiConnection = Player.PlayerGui.ChildAdded:Connect(function(child)
-    if not scriptRunning then
-        playerGuiConnection:Disconnect()
-        return
-    end
-    
-    if child:IsA("ScreenGui") then
-        delay(2, function()
-            if scriptRunning then
-                findAllUIElements()
-            end
-        end)
-    end
+-- Tự động phát hiện HumanoidRootPart mới khi người chơi hồi sinh
+player.CharacterAdded:Connect(function(newCharacter)
+    character = newCharacter
+    hrp = newCharacter:WaitForChild("HumanoidRootPart")
 end)
 
--- Theo dõi sự xuất hiện của thông báo phần thưởng mới
-spawn(function()
-    while scriptRunning and wait(2) do
-        if not scriptRunning then break end
+local function anticheat()
+    local player = game.Players.LocalPlayer
+    if player and player.Character then
+        local characterScripts = player.Character:FindFirstChild("CharacterScripts")
         
-        local newRewardUI = findNewRewardNotification()
-        if newRewardUI then
-            checkNewRewardNotification(newRewardUI)
-        end
-    end
-end)
+        if characterScripts then
+            local flyingFixer = characterScripts:FindFirstChild("FlyingFixer")
+            if flyingFixer then
+                flyingFixer:Destroy()
+            end
 
--- Theo dõi phần thưởng mới liên tục (với tần suất thấp hơn)
-spawn(function()
-    while scriptRunning and wait(5) do
-        if not scriptRunning then break end
-        
-        -- Đọc số lượng item định kỳ
-        readActualItemQuantities()
-        
-        -- Chỉ kiểm tra REWARDS nếu không có NEW REWARD
-        local newRewardUI = findNewRewardNotification()
-        if not newRewardUI then
-            local rewardsUI = findRewardsUI()
-            if rewardsUI then
-                checkNewRewards(rewardsUI)
+            local characterUpdater = characterScripts:FindFirstChild("CharacterUpdater")
+            if characterUpdater then
+                characterUpdater:Destroy()
             end
         end
-        
-        -- Luôn kiểm tra RECEIVED để cập nhật số lượng
-        local receivedUI = findReceivedFrame()
-        if receivedUI then
-            checkReceivedRewards(receivedUI)
-        end
-    end
-end)
-
--- Gửi một webhook về tất cả phần thưởng hiện có trong UI RECEIVED khi khởi động script
-local function sendInitialReceivedWebhook()
-    print("Đang gửi webhook ban đầu về các phần thưởng hiện có...")
-    
-    -- Hiển thị thông báo đang gửi webhook ban đầu
-    Rayfield:Notify({
-        Title = "Khởi tạo",
-        Content = "Đang kiểm tra và gửi thông tin phần thưởng hiện có...",
-        Duration = 3,
-        Image = "loader", -- Lucide icon
-    })
-    
-    -- Tìm UI RECEIVED và đọc dữ liệu
-    local receivedUI = findReceivedFrame()
-    if not receivedUI then 
-        print("Không tìm thấy UI RECEIVED - thử phương án dự phòng...")
-        
-        -- Hiển thị thông báo không tìm thấy UI
-        Rayfield:Notify({
-            Title = "Lưu ý",
-            Content = "Không tìm thấy UI hiển thị phần thưởng, vui lòng mở UI phần thưởng trong game",
-            Duration = 5,
-            Image = "alert-triangle", -- Lucide icon
-        })
-        
-        -- Phương án dự phòng sẽ được giữ nguyên
-        -- ...
-    else
-        -- Nếu tìm thấy RECEIVED UI, tiếp tục xử lý
-        print("Đã tìm thấy UI RECEIVED, đang đọc dữ liệu...")
-        
-        -- Tạo danh sách phần thưởng thủ công bằng cách duyệt toàn bộ UI
-        local receivedItems = {}
-        local foundAny = false
-        
-        -- Tìm tất cả TextLabel trong RECEIVED UI
-        for _, textLabel in pairs(receivedUI:GetDescendants()) do
-            if textLabel:IsA("TextLabel") then
-                local text = textLabel.Text
-                
-                -- Nếu chứa GEMS, POWDER hoặc TICKETS
-                if (text:find("GEMS") or text:find("POWDER") or text:find("TICKETS")) and not isCashReward(text) then
-                    print("Tìm thấy item text: " .. text)
-                    table.insert(receivedItems, text)
-                    foundAny = true
-                end
-            end
-        end
-        
-        -- Không gửi webhook nếu không tìm thấy item nào
-        if not foundAny then
-            print("Không tìm thấy phần thưởng nào trong UI RECEIVED")
-            
-            -- Hiển thị thông báo không tìm thấy phần thưởng
-            Rayfield:Notify({
-                Title = "Thông báo",
-                Content = "Không tìm thấy phần thưởng nào hiện có",
-                Duration = 3,
-                Image = "info", -- Lucide icon
-            })
-            
-            -- Vẫn cập nhật lại playerItems để dùng cho lần sau
-            readActualItemQuantities()
-            return
-        end
-        
-        -- Đánh dấu đang xử lý
-        isProcessingReward = true
-        
-        local allItemsText = ""
-        for _, itemText in ipairs(receivedItems) do
-            allItemsText = allItemsText .. "- " .. itemText .. "\n"
-        end
-        
-        -- Đọc số lượng item chính xác
-        readActualItemQuantities()
-        
-        -- Hiển thị thông tin từ playerItems thay vì receivedItems
-        local itemListText = ""
-        if next(playerItems) ~= nil then
-            for itemType, amount in pairs(playerItems) do
-                itemListText = itemListText .. "- " .. amount .. " " .. itemType .. "\n"
-            end
-        else
-            -- Sử dụng receivedItems nếu không đọc được từ playerItems
-            itemListText = allItemsText
-        end
-        
-        local data = {
-            content = nil,
-            embeds = {
-                {
-                    title = "🎮 Arise Crossover - Phần thưởng hiện có",
-                    description = "Danh sách phần thưởng đã nhận ",
-                    color = 7419530, -- Màu xanh biển
-                    fields = {
-                        {
-                            name = "Phần thưởng đã nhận",
-                            value = itemListText ~= "" and itemListText or "Không có phần thưởng nào",
-                            inline = false
-                        },
-                        {
-                            name = "Thời gian",
-                            value = os.date("%d/%m/%Y %H:%M:%S"),
-                            inline = true
-                        },
-                        {
-                            name = "Người chơi",
-                            value = Player.Name,
-                            inline = true
-                        }
-                    },
-                    footer = {
-                        text = "Arise Crossover Rewards Tracker - DuongTuan"
-                    }
-                }
-            }
-        }
-        
-        -- Chuyển đổi dữ liệu thành chuỗi JSON
-        local jsonData = HttpService:JSONEncode(data)
-        
-        print("Chuẩn bị gửi webhook với dữ liệu: " .. jsonData:sub(1, 100) .. "...")
-        
-        -- Sử dụng HTTP request từ executor thay vì HttpService
-        local success, err = pcall(function()
-            -- Synapse X
-            if syn and syn.request then
-                syn.request({
-                    Url = CONFIG.WEBHOOK_URL,
-                    Method = "POST",
-                    Headers = {
-                        ["Content-Type"] = "application/json"
-                    },
-                    Body = jsonData
-                })
-                print("Đã gửi webhook qua syn.request")
-            -- KRNL, Script-Ware và nhiều executor khác
-            elseif request then
-                request({
-                    Url = CONFIG.WEBHOOK_URL,
-                    Method = "POST",
-                    Headers = {
-                        ["Content-Type"] = "application/json"
-                    },
-                    Body = jsonData
-                })
-                print("Đã gửi webhook qua request")
-            -- Các Executor khác
-            elseif http and http.request then
-                http.request({
-                    Url = CONFIG.WEBHOOK_URL,
-                    Method = "POST",
-                    Headers = {
-                        ["Content-Type"] = "application/json"
-                    },
-                    Body = jsonData
-                })
-                print("Đã gửi webhook qua http.request")
-            -- JJSploit và một số executor khác
-            elseif httppost then
-                httppost(CONFIG.WEBHOOK_URL, jsonData)
-                print("Đã gửi webhook qua httppost")
-            else
-                error("Không tìm thấy HTTP API nào được hỗ trợ bởi executor hiện tại")
-            end
-        end)
-        
-        if success then
-            print("Đã gửi webhook ban đầu thành công với " .. #receivedItems .. " phần thưởng")
-            
-            -- Hiển thị thông báo gửi webhook thành công
-            Rayfield:Notify({
-                Title = "Thành công",
-                Content = "Đã gửi thông tin " .. #receivedItems .. " phần thưởng hiện có",
-                Duration = 3,
-                Image = "check", -- Lucide icon
-            })
-        else
-            warn("Lỗi gửi webhook ban đầu: " .. tostring(err))
-            
-            -- Hiển thị thông báo lỗi
-            Rayfield:Notify({
-                Title = "Lỗi",
-                Content = "Không thể gửi webhook ban đầu: " .. tostring(err),
-                Duration = 5,
-                Image = "x", -- Lucide icon
-            })
-        end
-        
-        -- Kết thúc xử lý
-        wait(0.5)
-        isProcessingReward = false
-        lastWebhookTime = tick() -- Cập nhật thời gian gửi webhook cuối cùng
     end
 end
 
--- Khởi tạo tìm kiếm ban đầu và tạo UI
-delay(3, function()
-    print("Bắt đầu tìm kiếm UI và chuẩn bị gửi webhook khởi động...")
-    
-    -- Tìm các UI
-    findAllUIElements()
-    
-    -- Gửi webhook ban đầu chỉ một lần
-    sendInitialReceivedWebhook()
-    
-    -- Cập nhật thông tin hiển thị phần thưởng trong Rayfield
-    if TotalRewardsLabel then
-        local rewardsText = getTotalRewardsText()
-        TotalRewardsText = rewardsText
-        TotalRewardsLabel:Set({
-            Title = "Tổng phần thưởng hiện có", 
-            Content = rewardsText
-        })
-    end
-    
-    -- Thông báo Rayfield đã khởi động xong
-    Rayfield:Notify({
-        Title = "Arise Webhook đã sẵn sàng",
-        Content = "Đang theo dõi phần thưởng của " .. playerName,
-        Duration = 5,
-        Image = "check-circle", -- Lucide icon
-    })
-end)
-
-print("Script theo dõi phần thưởng AFKRewards đã được nâng cấp:")
-print("- Giao diện mới sử dụng Rayfield")
-print("- Gửi webhook khi khởi động để thông báo các phần thưởng hiện có")
-print("- Chỉ gửi MỘT webhook cho mỗi phần thưởng mới")
-print("- Không hiển thị và không gửi webhook cho CASH")
-print("- Kiểm tra số lượng item thực tế từ RECEIVED")
-print("- Hiển thị tổng phần thưởng chính xác trong webhook")
-print("- Ping @everyone khi phát hiện ZIRU G lần đầu tiên")
-print("- Cấu hình riêng biệt cho từng tài khoản: " .. CONFIG_FILE)
-print("- Giám sát phần thưởng mới với cooldown " .. WEBHOOK_COOLDOWN .. " giây")
-print("- Hỗ trợ phát hiện đặc biệt cho TIGER, TWIN PRISM BLADES và ZIRU G")
-
--- Gửi thông tin đến Discord webhook (sử dụng HTTP request từ executor)
-local function sendWebhook(rewardInfo, rewardObject, isNewReward)
-    -- Loại bỏ các tiền tố không cần thiết
-    local cleanRewardInfo = rewardInfo:gsub("RECEIVED:%s*", "")
-    cleanRewardInfo = cleanRewardInfo:gsub("YOU GOT A NEW REWARD!%s*", "")
-    
-    -- Bỏ qua nếu phần thưởng là CASH
-    if isCashReward(cleanRewardInfo) then
-        print("Bỏ qua gửi webhook cho CASH: " .. cleanRewardInfo)
-        return
-    end
-    
-    -- Kiểm tra xem có đang xử lý phần thưởng khác không
-    if isProcessingReward then
-        print("Đang xử lý phần thưởng khác, bỏ qua...")
-        return
-    end
-    
-    -- Kiểm tra cooldown
-    if not canSendWebhook() then
-        print("Cooldown webhook còn " .. math.floor(WEBHOOK_COOLDOWN - (tick() - lastWebhookTime)) .. " giây, bỏ qua...")
-        return
-    end
-    
-    -- Tạo ID duy nhất và kiểm tra trùng lặp
-    local rewardId = createUniqueRewardId(cleanRewardInfo)
-    if receivedRewards[rewardId] then
-        print("Phần thưởng này đã được gửi trước đó: " .. cleanRewardInfo)
-        return
-    end
-    
-    -- Đánh dấu đang xử lý
-    isProcessingReward = true
-    lastWebhookTime = tick()
-    
-    -- Đánh dấu đã nhận
-    receivedRewards[rewardId] = true
-    
-    -- Đọc số lượng item thực tế trước khi gửi webhook
-    readActualItemQuantities()
-    
-    local title = "🎁 Arise Crossover - AFKRewards"
-    local description = "Phần thưởng mới đã nhận được!"
-    
-    -- Cập nhật tổng phần thưởng
-    updateTotalRewards(cleanRewardInfo)
-
-    -- Kiểm tra xem phần thưởng có chứa ZIRU G không để ping @everyone (mỗi lần phát hiện ZIRU G)
-    local hasZiruG = cleanRewardInfo:find("ZIRU G") ~= nil
-    local hasRarePowder = cleanRewardInfo:find("RARE POWDER") ~= nil and cleanRewardInfo:match("(%d+)%s+RARE POWDER") and tonumber(cleanRewardInfo:match("(%d+)%s+RARE POWDER")) >= 100
-    local hasLegendaryPowder = cleanRewardInfo:find("LEGENDARY POWDER") ~= nil
-    
-    -- Ping @everyone nếu phát hiện ZIRU G hoặc số lượng lớn LEGENDARY/RARE POWDER
-    local shouldPingEveryone = hasZiruG or hasLegendaryPowder or hasRarePowder
-    local pingMessage = ""
-    
-    if hasZiruG then
-        pingMessage = "@everyone Phát hiện ZIRU G!"
-    elseif hasLegendaryPowder then
-        pingMessage = "@everyone Phát hiện LEGENDARY POWDER!"
-    elseif hasRarePowder then
-        pingMessage = "@everyone Phát hiện số lượng lớn RARE POWDER!"
-    end
-    
-    local data = {
-        content = shouldPingEveryone and pingMessage or nil,
-        embeds = {
-            {
-                title = title,
-                description = description,
-                color = 7419530, -- Màu xanh biển
-                fields = {
-                    {
-                        name = "Thông tin phần thưởng",
-                        value = getLatestRewardsText(cleanRewardInfo),
-                        inline = false
-                    },
-                    {
-                        name = "Thời gian",
-                        value = os.date("%d/%m/%Y %H:%M:%S"),
-                        inline = true
-                    },
-                    {
-                        name = "Người chơi",
-                        value = Player.Name,
-                        inline = true
-                    },
-                    {
-                        name = "Tổng hợp phần thưởng",
-                        value = getTotalRewardsText(),
-                        inline = false
-                    }
-                },
-                footer = {
-                    text = "Arise Crossover Rewards Tracker - DuongTuan"
-                }
-            }
-        }
-    }
-    
-    -- Chuyển đổi dữ liệu thành chuỗi JSON
-    local jsonData = HttpService:JSONEncode(data)
-    
-    -- Cập nhật URL từ cấu hình
-    local currentWebhookUrl = CONFIG.WEBHOOK_URL
-    
-    -- Sử dụng HTTP request từ executor thay vì HttpService
-    local success, err = pcall(function()
-        -- Synapse X
-        if syn and syn.request then
-            syn.request({
-                Url = currentWebhookUrl,
-                Method = "POST",
-                Headers = {
-                    ["Content-Type"] = "application/json"
-                },
-                Body = jsonData
-            })
-        -- KRNL, Script-Ware và nhiều executor khác
-        elseif request then
-            request({
-                Url = currentWebhookUrl,
-                Method = "POST",
-                Headers = {
-                    ["Content-Type"] = "application/json"
-                },
-                Body = jsonData
-            })
-        -- Các Executor khác
-        elseif http and http.request then
-            http.request({
-                Url = currentWebhookUrl,
-                Method = "POST",
-                Headers = {
-                    ["Content-Type"] = "application/json"
-                },
-                Body = jsonData
-            })
-        -- JJSploit và một số executor khác
-        elseif httppost then
-            httppost(currentWebhookUrl, jsonData)
-        else
-            error("Không tìm thấy HTTP API nào được hỗ trợ bởi executor hiện tại")
-        end
-    end)
-    
-    if success then
-        print("Đã gửi phần thưởng thành công: " .. cleanRewardInfo)
-        if shouldPingEveryone then
-            print("Đã ping @everyone vì phát hiện ZIRU G!")
-        end
-        
-        -- Hiển thị thông báo Rayfield khi nhận phần thưởng
-        Rayfield:Notify({
-            Title = "Phần thưởng mới!",
-            Content = cleanRewardInfo,
-            Duration = 5,
-            Image = "gift", -- Lucide icon
-        })
-        
-        -- Cập nhật thông tin hiển thị trong UI
-        if TotalRewardsLabel then
-            local rewardsText = getTotalRewardsText()
-            TotalRewardsText = rewardsText
-            TotalRewardsLabel:Set({
-                Title = "Tổng phần thưởng hiện có", 
-                Content = rewardsText
-            })
-        end
-    else
-        warn("Lỗi gửi webhook: " .. tostring(err))
-        
-        -- Hiển thị thông báo lỗi trong Rayfield
-        Rayfield:Notify({
-            Title = "Lỗi gửi webhook",
-            Content = "Không thể gửi thông tin phần thưởng",
-            Duration = 5,
-            Image = "alert-triangle", -- Lucide icon
-        })
-    end
-    
-    -- Kết thúc xử lý
-    wait(0.5) -- Chờ một chút để tránh xử lý quá nhanh
-    isProcessingReward = false
-end
-
--- Set này dùng để theo dõi đã gửi webhook của phần thưởng
-local sentRewards = {}
-
--- Kiểm tra phần thưởng mới từ thông báo "YOU GOT A NEW REWARD!"
-checkNewRewardNotification = function(notificationContainer)
-    if not notificationContainer then return end
-    
-    -- Tìm các thông tin phần thưởng trong thông báo
-    local rewardText = ""
-    
-    for _, child in pairs(notificationContainer:GetDescendants()) do
-        if child:IsA("TextLabel") and not child.Text:find("YOU GOT") then
-            rewardText = rewardText .. child.Text .. " "
-        end
-    end
-    
-    -- Nếu tìm thấy thông tin phần thưởng
-    if rewardText ~= "" then
-        -- Tạo ID để kiểm tra
-        local rewardId = createUniqueRewardId(rewardText)
-        
-        -- Nếu chưa gửi phần thưởng này
-        if not sentRewards[rewardId] then
-            sentRewards[rewardId] = true
-            
-            -- Đọc số lượng item hiện tại trước
-            readActualItemQuantities()
-            -- Gửi webhook với thông tin phần thưởng mới
-            sendWebhook(rewardText, notificationContainer, true)
+local function isEnemyDead(enemy)
+    local healthBar = enemy:FindFirstChild("HealthBar")
+    if healthBar and healthBar:FindFirstChild("Main") and healthBar.Main:FindFirstChild("Bar") then
+        local amount = healthBar.Main.Bar:FindFirstChild("Amount")
+        if amount and amount:IsA("TextLabel") and amount.ContentText == "0 HP" then
             return true
         end
     end
-    
     return false
 end
 
--- Kiểm tra phần thưởng mới
-checkNewRewards = function(rewardsContainer)
-    if not rewardsContainer then return end
-    
-    for _, rewardObject in pairs(rewardsContainer:GetChildren()) do
-        if rewardObject:IsA("Frame") or rewardObject:IsA("ImageLabel") then
-            -- Tìm các text label trong phần thưởng
-            local rewardText = ""
-            
-            for _, child in pairs(rewardObject:GetDescendants()) do
-                if child:IsA("TextLabel") then
-                    rewardText = rewardText .. child.Text .. " "
-                end
-            end
-            
-            -- Nếu là phần thưởng có dữ liệu
-            if rewardText ~= "" then
-                -- Tạo ID để kiểm tra
-                local rewardId = createUniqueRewardId(rewardText)
-                
-                -- Nếu chưa gửi phần thưởng này
-                if not sentRewards[rewardId] then
-                    sentRewards[rewardId] = true
-                    sendWebhook(rewardText, rewardObject, false)
+local function getNearestSelectedEnemy()
+    local nearestEnemy = nil
+    local shortestDistance = math.huge
+    local playerPosition = hrp.Position
+
+    for _, enemy in ipairs(enemiesFolder:GetChildren()) do
+        if enemy:IsA("Model") and enemy:FindFirstChild("HumanoidRootPart") then
+            local healthBar = enemy:FindFirstChild("HealthBar")
+            if healthBar and healthBar:FindFirstChild("Main") and healthBar.Main:FindFirstChild("Title") then
+                local title = healthBar.Main.Title
+                if title and title:IsA("TextLabel") and title.ContentText == selectedMobName and not killedNPCs[enemy.Name] then
+                    local enemyPosition = enemy.HumanoidRootPart.Position
+                    local distance = (playerPosition - enemyPosition).Magnitude
+                    if distance < shortestDistance then
+                        shortestDistance = distance
+                        nearestEnemy = enemy
+                    end
                 end
             end
         end
+    end
+    return nearestEnemy
+end
+
+local function getAnyEnemy()
+    for _, enemy in ipairs(enemiesFolder:GetChildren()) do
+        if enemy:IsA("Model") and enemy:FindFirstChild("HumanoidRootPart") and not dungeonkill[enemy.Name] then
+            return enemy
+        end
+    end
+    return nil
+end
+
+local function fireShowPetsRemote()
+    local args = {
+        [1] = {
+            [1] = {
+                ["Event"] = "ShowPets"
+            },
+            [2] = "\t"
+        }
+    }
+    remote:FireServer(unpack(args))
+end
+
+local function getNearestEnemy()
+    local nearestEnemy, shortestDistance = nil, math.huge
+    local playerPosition = hrp.Position
+
+    for _, enemy in ipairs(enemiesFolder:GetChildren()) do
+        if enemy:IsA("Model") and enemy:FindFirstChild("HumanoidRootPart") and not killedNPCs[enemy.Name] then
+            local distance = (playerPosition - enemy:GetPivot().Position).Magnitude
+            if distance < shortestDistance then
+                shortestDistance = distance
+                nearestEnemy = enemy
+            end
+        end
+    end
+    return nearestEnemy
+end
+
+local function moveToTarget(target)
+    if not target or not target:FindFirstChild("HumanoidRootPart") then return end
+    local enemyHrp = target.HumanoidRootPart
+
+    if movementMethod == "Teleport" then
+        hrp.CFrame = enemyHrp.CFrame * CFrame.new(0, 0, 6)
+    elseif movementMethod == "Tween" then
+        local tweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Linear)
+        local tween = TweenService:Create(hrp, tweenInfo, {CFrame = enemyHrp.CFrame * CFrame.new(0, 0, 6)})
+        tween:Play()
+    elseif movementMethod == "Walk" then
+        hrp.Parent:MoveTo(enemyHrp.Position)
     end
 end
 
--- Kiểm tra khi nhận được phần thưởng mới
-checkReceivedRewards = function(receivedContainer)
-    if not receivedContainer then return end
-    
-    -- Đọc số lượng item hiện tại
-    readActualItemQuantities()
-    
-    -- Ghi nhận đã kiểm tra RECEIVED
-    local receivedMarked = false
-    
-    for _, rewardObject in pairs(receivedContainer:GetChildren()) do
-        if rewardObject:IsA("Frame") or rewardObject:IsA("ImageLabel") then
-            local rewardText = ""
-            
-            for _, child in pairs(rewardObject:GetDescendants()) do
-                if child:IsA("TextLabel") then
-                    rewardText = rewardText .. child.Text .. " "
-                end
-            end
-            
-            -- Nếu là phần thưởng có dữ liệu và chưa ghi nhận RECEIVED
-            if rewardText ~= "" and not receivedMarked then
-                receivedMarked = true
-                
-                -- Không gửi webhook từ phần RECEIVED nữa, chỉ ghi nhận đã đọc
-                -- Webhook sẽ được gửi từ NEW REWARD hoặc REWARDS
-                
-                -- Đánh dấu tất cả phần thưởng từ RECEIVED đã được xử lý
-                local rewardId = createUniqueRewardId("RECEIVED:" .. rewardText)
-                sentRewards[rewardId] = true
-            end
-        end
-    end
-    
-    -- Cập nhật thông tin hiển thị trong UI nếu có thay đổi
-    if TotalRewardsLabel then
-        local rewardsText = getTotalRewardsText()
-        if rewardsText ~= TotalRewardsText then
-            TotalRewardsText = rewardsText
-            TotalRewardsLabel:Set({
-                Title = "Tổng phần thưởng hiện có", 
-                Content = rewardsText
+local function teleportAndTrackDeath()
+    while teleportEnabled do
+        local target = getNearestEnemy()
+        if target and target.Parent then
+            anticheat()
+            moveToTarget(target)
+            task.wait(0.5)
+            fireShowPetsRemote()
+            remote:FireServer({
+                {
+                    ["PetPos"] = {},
+                    ["AttackType"] = "All",
+                    ["Event"] = "Attack",
+                    ["Enemy"] = target.Name
+                },
+                "\7"
             })
+
+            while teleportEnabled and target.Parent and not isEnemyDead(target) do
+                task.wait(0.1)
+            end
+
+            killedNPCs[target.Name] = true
         end
+        task.wait(0.2)
     end
 end
 
--- Chức năng Auto Teleport
-local function autoTeleportToAFK()
-    local TeleportService = game:GetService("TeleportService")
-    local Players = game:GetService("Players")
-    local placeId = 116614712661486 
-    local player = Players.LocalPlayer
+local function teleportDungeon()
+    while teleportEnabled do
+        local target = getAnyEnemy()
 
-    if not player then
-        repeat
-            task.wait()
-            player = Players.LocalPlayer
-        until player
+        if target and target.Parent then
+            anticheat()
+            moveToTarget(target)
+            task.wait(0.50)
+            fireShowPetsRemote()
+            remote:FireServer({
+                {
+                    ["PetPos"] = {},
+                    ["AttackType"] = "All",
+                    ["Event"] = "Attack",
+                    ["Enemy"] = target.Name
+                },
+                "\7"
+            })
+
+            repeat task.wait() until not target.Parent or isEnemyDead(target)
+
+            dungeonkill[target.Name] = true
+        end
+        task.wait()
     end
+end
 
-    -- Kiểm tra nếu người chơi đã ở nơi cần đến
-    if game.PlaceId == placeId then
-        return -- Dừng script ngay lập tức nếu đã ở đúng nơi
+local function teleportToSelectedEnemy()
+    while teleportEnabled do
+        local target = getNearestSelectedEnemy()
+        if target and target.Parent then
+            anticheat()
+            moveToTarget(target)
+            task.wait(0.5)
+            fireShowPetsRemote()
+
+            remote:FireServer({
+                {
+                    ["PetPos"] = {},
+                    ["AttackType"] = "All",
+                    ["Event"] = "Attack",
+                    ["Enemy"] = target.Name
+                },
+                "\7"
+            })
+
+            while teleportEnabled and target.Parent and not isEnemyDead(target) do
+                task.wait(0.1)
+            end
+
+            killedNPCs[target.Name] = true
+        end
+        task.wait(0.20)
     end
+end
 
-    task.wait(30) -- Chờ 30 giây trước khi thực hiện teleport
+local function attackEnemy()
+    while damageEnabled do
+        local targetEnemy = getNearestEnemy()
+        if targetEnemy then
+            local args = {
+                [1] = {
+                    [1] = {
+                        ["Event"] = "PunchAttack",
+                        ["Enemy"] = targetEnemy.Name
+                    },
+                    [2] = "\4"
+                }
+            }
+            remote:FireServer(unpack(args))
+        end
+        task.wait(1)
+    end
+end
 
-    local success, errorMessage = pcall(function()
-        TeleportService:Teleport(placeId, player)
+-- Farm Method Selection Dropdown
+local Fluent
+local SaveManager
+local InterfaceManager
+
+local success, err = pcall(function()
+    Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+    SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
+    InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
+end)
+
+if not success then
+    warn("Lỗi khi tải thư viện Fluent: " .. tostring(err))
+    -- Thử tải từ URL dự phòng
+    pcall(function()
+        Fluent = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Fluent.lua"))()
+        SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
+        InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
     end)
+end
 
-    if not success then
-        warn("Teleport failed: " .. errorMessage)
+if not Fluent then
+    error("Không thể tải thư viện Fluent. Vui lòng kiểm tra kết nối internet hoặc executor.")
+    return
+end
+
+local Window = Fluent:CreateWindow({
+    Title = "Kaihon Hub | Arise Crossover",
+    SubTitle = "",
+    TabWidth = 140,
+    Size = UDim2.fromOffset(450, 350),
+    Acrylic = false,
+    Theme = "Darker",
+    MinimizeKey = Enum.KeyCode.LeftControl
+})
+
+local Tabs = {
+    Discord = Window:AddTab({ Title = "INFO", Icon = ""}),
+    Main = Window:AddTab({ Title = "Main", Icon = "" }),
+    tp = Window:AddTab({ Title = "Teleports", Icon = "" }),
+    mount = Window:AddTab({ Title = "Mount Location/farm", Icon = "" }),
+    dungeon = Window:AddTab({ Title = "Dungeon ", Icon = "" }),
+    pets = Window:AddTab({ Title = "Pets ", Icon = "" }),
+    Player = Window:AddTab({ Title = "Player", Icon = "" }),
+    misc = Window:AddTab({ Title = "misc", Icon = "" }),
+    Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
+}
+
+Tabs.Main:AddInput("MobNameInput", {
+    Title = "Enter Mob Name",
+    Default = ConfigSystem.CurrentConfig.SelectedMobName or "",
+    Placeholder = "Type Here",
+    Callback = function(text)
+        selectedMobName = text
+        ConfigSystem.CurrentConfig.SelectedMobName = text
+        ConfigSystem.SaveConfig()
+        killedNPCs = {} -- Đặt lại danh sách NPC đã tiêu diệt khi thay đổi mob
+        print("Selected Mob:", selectedMobName) -- Gỡ lỗi
+    end
+})
+
+Tabs.Main:AddToggle("FarmSelectedMob", {
+    Title = "Farm Selected Mob",
+    Default = ConfigSystem.CurrentConfig.FarmSelectedMob or false,
+    Callback = function(state)
+        teleportEnabled = state
+        damageEnabled = state -- Đảm bảo tính năng tấn công mobs được kích hoạt
+        ConfigSystem.CurrentConfig.FarmSelectedMob = state
+        ConfigSystem.SaveConfig()
+        killedNPCs = {} -- Đặt lại danh sách NPC đã tiêu diệt khi bắt đầu farm
+        if state then
+            task.spawn(teleportToSelectedEnemy)
+        end
+    end
+})
+
+Tabs.Main:AddToggle("TeleportMobs", {
+    Title = "Auto farm (nearest NPCs)",
+    Default = ConfigSystem.CurrentConfig.AutoFarmNearestNPCs or false,
+    Callback = function(state)
+        teleportEnabled = state
+        ConfigSystem.CurrentConfig.AutoFarmNearestNPCs = state
+        ConfigSystem.SaveConfig()
+        if state then
+            task.spawn(teleportAndTrackDeath)
+        end
+    end
+})
+
+local Dropdown = Tabs.Main:AddDropdown("MovementMethod", {
+    Title = "Farming Method",
+    Values = {"Tween", "Teleport"},
+    Multi = false,
+    Default = ConfigSystem.CurrentConfig.FarmingMethod == "Teleport" and 2 or 1,
+    Callback = function(option)
+        movementMethod = option
+        ConfigSystem.CurrentConfig.FarmingMethod = option
+        ConfigSystem.SaveConfig()
+    end
+})
+
+Tabs.Main:AddToggle("DamageMobs", {
+    Title = "Damage Mobs ENABLE THIS",
+    Default = ConfigSystem.CurrentConfig.DamageMobs or false,
+    Callback = function(state)
+        damageEnabled = state
+        ConfigSystem.CurrentConfig.DamageMobs = state
+        ConfigSystem.SaveConfig()
+        if state then
+            task.spawn(attackEnemy)
+        end
+    end
+})
+
+
+
+Tabs.dungeon:AddToggle("TeleportMobs", { 
+    Title = "Auto farm Dungeon", 
+    Default = false, 
+    Flag = "AutoFarmDungeon", -- Thêm Flag để lưu cấu hình
+    Callback = function(state) 
+        teleportEnabled = state 
+        if state then 
+            task.spawn(teleportDungeon) 
+        end 
+    end 
+})
+
+Tabs.Main:AddToggle("GamepassShadowFarm", {
+    Title = "Gamepass Shadow farm",
+    Default = false,
+    Callback = function(state)
+        local attackatri = game:GetService("Players").LocalPlayer.Settings
+        local atri = attackatri:GetAttribute("AutoAttack")
+        
+        if state then
+            -- Bật tính năng
+            if atri == false then
+                attackatri:SetAttribute("AutoAttack", true)
+            end
+            print("Shadow farm đã bật")
+        else
+            -- Tắt tính năng
+            attackatri:SetAttribute("AutoAttack", false)
+            print("Shadow farm đã tắt")
+        end
+    end
+})
+
+local function SetSpawnAndReset(spawnName)
+    local args = {
+        [1] = {
+            [1] = {
+                ["Event"] = "ChangeSpawn",
+                ["Spawn"] = spawnName
+            },
+            [2] = "\n"
+        }
+    }
+
+    local remote = game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent")
+    remote:FireServer(unpack(args))
+
+    -- Đợi một chút trước khi hồi sinh (tùy chọn, để đảm bảo điểm hồi sinh được thiết lập)
+    task.wait(0.5)
+
+    -- Hồi sinh nhân vật
+    local player = game.Players.LocalPlayer
+if player.Character and player.Character.Parent then
+    local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        humanoid.Health = 0 -- Tạo ra cái chết tự nhiên mà không xóa nhân vật đột ngột
     end
 end
 
--- Kiểm tra và thực hiện Auto Teleport nếu được bật
-spawn(function()
-    while scriptRunning and wait(5) do
-        if CONFIG.AUTO_TELEPORT then
-            autoTeleportToAFK()
+end
+
+Tabs.tp:AddButton({
+    Title = "Brum Island",
+    Description = "Set spawn & reset",
+    Callback = function()
+        SetSpawnAndReset("OPWorld") -- Thay đổi thành tên điểm hồi sinh đúng
+    end
+})
+
+Tabs.tp:AddButton({
+    Title = "Grass Village",
+    Description = "Set spawn & reset",
+    Callback = function()
+        SetSpawnAndReset("NarutoWorld")
+    end
+})
+
+Tabs.tp:AddButton({
+    Title = "Solo City",
+    Description = "Set spawn & reset",
+    Callback = function()
+        SetSpawnAndReset("SoloWorld")
+    end
+})
+
+Tabs.tp:AddButton({
+    Title = "Faceheal Town",
+    Description = "Set spawn & reset",
+    Callback = function()
+        SetSpawnAndReset("BleachWorld")
+    end
+})
+
+Tabs.tp:AddButton({
+    Title = "Lucky island",
+    Description = "Set spawn & reset",
+    Callback = function()
+        SetSpawnAndReset("BCWorld")
+    end
+})
+
+Tabs.tp:AddButton({
+    Title = "Mori Town",
+    Description = "Set spawn & reset",
+    Callback = function()
+        SetSpawnAndReset("JojoWorld")
+    end
+})
+
+local TweenService = game:GetService("TweenService")
+
+
+
+
+
+-- Lấy Player và HumanoidRootPart
+local TweenService = game:GetService("TweenService")
+local player = game.Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local hrp = character:WaitForChild("HumanoidRootPart")
+
+-- Cập nhật HRP khi nhân vật hồi sinh
+player.CharacterAdded:Connect(function(newCharacter)
+    character = newCharacter
+    hrp = character:WaitForChild("HumanoidRootPart") -- Lấy HRP mới sau khi hồi sinh
+end)
+
+-- Hàm di chuyển (Luôn sử dụng HRP mới nhất)
+local function teleportWithTween(targetCFrame)
+    if hrp then
+        local tweenInfo = TweenInfo.new(
+            2, -- Thời gian (giây)
+            Enum.EasingStyle.Sine,
+            Enum.EasingDirection.Out,
+            0, -- Không lặp lại
+            false, -- Không đảo ngược
+            0 -- Không độ trễ
+        )
+
+        local tweenGoal = {CFrame = targetCFrame}
+        local tween = TweenService:Create(hrp, tweenInfo, tweenGoal)
+        tween:Play()
+    end
+end
+
+
+-- Locations List
+local locations = {
+    {Name = "Location 1", CFrame = CFrame.new(-6161.25781, 140.639832, 5512.9668, -0.41691944, -8.07482721e-08, 0.908943415, -2.94452178e-07, 1, -4.62235228e-08, -0.908943415, -2.86911842e-07, -0.41691944)},
+    {Name = "Location 2", CFrame = CFrame.new(-5868.44141, 132.70488, 362.519379, 0.836233854, -7.47273816e-08, -0.548372984, 2.59595481e-07, 1, 2.59595481e-07, 0.548372984, -3.59437678e-07, 0.836233854)},
+    {Name = "Location 3", CFrame = CFrame.new(-5430.81006, 107.441559, -5502.25244, 0.8239398, -3.60997859e-07, -0.566677332, 2.59595453e-07, 1, -2.59595396e-07, 0.566677332, 6.67841249e-08, 0.8239398)},
+    {Name = "Location 4", CFrame = CFrame.new(-702.243225, 133.344467, -3538.11646, 0.978662074, 0.000114096198, -0.205476329, -0.000112703143, 1, 1.84834444e-05, 0.205476329, 5.06878177e-06, 0.978662074)},
+    {Name = "Location 5", CFrame = CFrame.new(450.001709, 117.564827, 3435.4292, -0.999887109, -1.20863996e-12, 0.0150266131, -1.12492459e-12, 1, 5.57959278e-12, -0.0150266131, 5.56205906e-12, -0.999887109)},
+    {Name = "Location 6", CFrame = CFrame.new(3230.96826, 135.41008, 36.1600113, -0.534268856, -4.75206689e-05, 0.845314622, -7.48304665e-05, 1, 8.92103617e-06, -0.845314622, -5.84890549e-05, -0.534268856)},
+    {Name = "Location 7", CFrame = CFrame.new(4325.36523, 118.995422, -4819.78857, -0.257801384, 3.98855832e-07, -0.966197908, -5.63039578e-07, 1, 5.63040146e-07, 0.966197908, 6.89160231e-07, -0.257801384)}
+    
+    
+}
+
+-- Add buttons for each location
+for _, loc in ipairs(locations) do
+    Tabs.mount:AddButton({
+        Title = loc.Name,
+        Callback = function()
+            teleportWithTween(loc.CFrame)
+        end
+    })
+end
+
+
+local autoDestroy = false
+local autoArise = false
+
+-- Function to Fire DestroyPrompt
+
+
+local enemiesFolder = workspace:WaitForChild("__Main"):WaitForChild("__Enemies"):WaitForChild("Client")
+
+
+local function fireDestroy()
+    while autoDestroy do
+        task.wait(0.3)  -- Delay to prevent overloading
+
+        for _, enemy in ipairs(enemiesFolder:GetChildren()) do
+            if enemy:IsA("Model") then
+                local rootPart = enemy:FindFirstChild("HumanoidRootPart")
+                local DestroyPrompt = rootPart and rootPart:FindFirstChild("DestroyPrompt")
+
+                if DestroyPrompt then
+                    DestroyPrompt:SetAttribute("MaxActivationDistance", 100000)
+                    fireproximityprompt(DestroyPrompt)
+                end
+            end
         end
     end
-end) 
+end
+
+
+
+-- Function to Fire ArisePrompt
+
+local enemiesFolder = workspace:WaitForChild("__Main"):WaitForChild("__Enemies"):WaitForChild("Client")
+
+
+local function fireArise()
+    while autoArise do
+        task.wait(0.3)  -- Delay to prevent overloading
+
+        for _, enemy in ipairs(enemiesFolder:GetChildren()) do
+            if enemy:IsA("Model") then
+                local rootPart = enemy:FindFirstChild("HumanoidRootPart")
+                local arisePrompt = rootPart and rootPart:FindFirstChild("ArisePrompt")
+
+                if arisePrompt then
+                    arisePrompt:SetAttribute("MaxActivationDistance", 100000)
+                    fireproximityprompt(arisePrompt)
+                end
+            end
+        end
+    end
+end
+
+
+
+
+
+-- Auto Destroy Toggle
+Tabs.Main:AddToggle("AutoDestroy", {
+    Title = "Auto Destroy",
+    Default = ConfigSystem.CurrentConfig.MainAutoDestroy or false,
+    Callback = function(state)
+        autoDestroy = state
+        ConfigSystem.CurrentConfig.MainAutoDestroy = state
+        ConfigSystem.SaveConfig()
+        if state then
+            task.spawn(fireDestroy)
+        end
+    end
+})
+
+-- Auto Arise Toggle
+Tabs.Main:AddToggle("AutoArise", {
+    Title = "Auto Arise",
+    Default = ConfigSystem.CurrentConfig.MainAutoArise or false,
+    Callback = function(state)
+        autoArise = state
+        ConfigSystem.CurrentConfig.MainAutoArise = state
+        ConfigSystem.SaveConfig()
+        if state then
+            task.spawn(fireArise)
+        end
+    end
+})
+
+Tabs.dungeon:AddToggle("AutoDestroy", {
+    Title = "Auto Destroy",
+    Default = false,
+    Flag = "DungeonAutoDestroy", -- Thêm Flag để lưu cấu hình
+    Callback = function(state)
+        autoDestroy = state
+        if state then
+            task.spawn(fireDestroy)
+        end
+    end
+})
+
+-- Auto Arise Toggle
+Tabs.dungeon:AddToggle("AutoArise", {
+    Title = "Auto Arise",
+    Default = false,
+    Flag = "DungeonAutoArise", -- Thêm Flag để lưu cấu hình
+    Callback = function(state)
+        autoArise = state
+        if state then
+            task.spawn(fireArise)
+        end
+    end
+})
+
+
+local TweenService = game:GetService("TweenService")
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local hrp = character:WaitForChild("HumanoidRootPart")
+
+local dungeonFolder = workspace:WaitForChild("__Main"):WaitForChild("__Dungeon")
+
+-- Variable to control teleporting
+local teleportingEnabled = false
+
+-- Function to create a dungeon
+local function createDungeon()
+    print("[DEBUG] Đang cố gắng tạo dungeon...")
+    local args = {
+        [1] = {
+            [1] = {
+                ["Event"] = "DungeonAction",
+                ["Action"] = "Create"
+            },
+            [2] = "\n" 
+        }
+    }
+    ReplicatedStorage:WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent"):FireServer(unpack(args))
+    print("[DEBUG] Đã kích hoạt sự kiện tạo Dungeon!")
+end
+
+-- Function to start the dungeon
+local function startDungeon()
+    local dungeonInstance = dungeonFolder:FindFirstChild("Dungeon")
+    if dungeonInstance then
+        local dungeonID = dungeonInstance:GetAttribute("ID")
+        if dungeonID then
+            print("[DEBUG] Bắt đầu dungeon với ID:", dungeonID)
+            local args = {
+                [1] = {
+                    [1] = {
+                        ["Dungeon"] = dungeonID,
+                        ["Event"] = "DungeonAction",
+                        ["Action"] = "Start"
+                    },
+                    [2] = "\n"
+                }
+            }
+            ReplicatedStorage:WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent"):FireServer(unpack(args))
+            print("[DEBUG] Đã kích hoạt sự kiện bắt đầu Dungeon!")
+        else
+            print("[LỖI] Không tìm thấy ID của Dungeon!")
+        end
+    else
+        print("[LỖI] Không tìm thấy instance của Dungeon!")
+    end
+end
+
+-- Function to teleport directly to an object and bypass anti-cheat
+local function teleportToObject(object)
+    if object and object:IsA("Part") then
+        print("[DEBUG] Đang dịch chuyển đến:", object.Name)
+
+        -- Vượt qua anti-cheat
+        local f = player.Character and player.Character:FindFirstChild("CharacterScripts") and player.Character.CharacterScripts:FindFirstChild("FlyingFixer")
+        if f then f:Destroy() else print("blablabla bleble") end
+
+        local cha = player.Character and player.Character:FindFirstChild("CharacterScripts") and player.Character.CharacterScripts:FindFirstChild("CharacterUpdater")
+        if cha then cha:Destroy() print("discord") else print("Cid") end
+
+        -- Dịch chuyển trực tiếp
+        hrp.CFrame = object.CFrame
+        print("[DEBUG] Đã hoàn thành dịch chuyển đến:", object.Name)
+
+        task.wait(2) -- Độ trễ nhỏ sau khi dịch chuyển
+        createDungeon() -- Kích hoạt remote tạo dungeon
+
+        task.wait(1) -- Độ trễ ngắn trước khi bắt đầu dungeon
+        startDungeon() -- Kích hoạt remote bắt đầu dungeon
+    else
+        print("[LỖI] Mục tiêu dịch chuyển không hợp lệ!")
+    end
+end
+
+-- Function to continuously teleport to objects when enabled
+local function teleportLoop()
+    while teleportingEnabled do
+        print("[DEBUG] Đang tìm kiếm các đối tượng dungeon...")
+        local foundObject = false
+        for _, object in ipairs(dungeonFolder:GetChildren()) do
+            if object:IsA("Part") then
+                foundObject = true
+                teleportToObject(object)
+                task.wait(1) -- Ngăn thực thi quá mức
+            end
+        end
+        if not foundObject then
+            print("[CẢNH BÁO] Không tìm thấy đối tượng dungeon hợp lệ!")
+        end
+        task.wait(0.5) -- Độ trễ trước khi kiểm tra lại
+    end
+end
+
+
+
+-- Add the toggle button to start/stop teleporting
+Tabs.dungeon:AddToggle("TeleportToDungeon", {
+    Title = "Teleport to Dungeon",
+    Default = false,
+    Callback = function(state)
+        teleportingEnabled = state
+        print("[DEBUG] Đã bật/tắt dịch chuyển:", state)
+        if state then
+            task.spawn(teleportLoop) -- Bắt đầu vòng lặp dịch chuyển khi bật
+        end
+    end
+})
+
+
+local AutoDetectToggle = Tabs.dungeon:AddToggle("AutoDetectDungeon", {Title = "Auto Detect Dungeon (KEEP THIS ON)", Default = true})
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local player = Players.LocalPlayer
+
+local villageSpawns = {
+    ["Grass Village"] = "NarutoWorld",
+    ["BRUM ISLAND"] = "OPWorld",
+    ["Leveling City"] = "SoloWorld",
+    ["FACEHEAL TOWN"] = "BleachWorld",
+    ["Lucky"] = "BCWorld"
+}
+
+local function SetSpawnAndReset(spawnName)
+    local args = {
+        [1] = {
+            [1] = {
+                ["Event"] = "ChangeSpawn",
+                ["Spawn"] = spawnName
+            },
+            [2] = "\n"
+        }
+    }
+
+    local remote = ReplicatedStorage:WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent")
+    remote:FireServer(unpack(args))
+
+    -- Đợi một chút trước khi hồi sinh (tùy chọn, để đảm bảo điểm hồi sinh được thiết lập)
+    task.wait(0.5)
+
+    -- Hồi sinh nhân vật
+    if player.Character then
+        player.Character:BreakJoints() -- Buộc nhân vật phải hồi sinh
+    end
+end
+
+local function detectDungeon()
+    player.PlayerGui.Warn.ChildAdded:Connect(function(dungeon)
+        if dungeon:IsA("Frame") and AutoDetectToggle.Value then
+            print("Đã phát hiện Dungeon!")
+            for _, child in ipairs(dungeon:GetChildren()) do
+                if child:IsA("TextLabel") then
+                    for village, spawnName in pairs(villageSpawns) do
+                        if string.find(string.lower(child.Text), string.lower(village)) then
+                            teleportEnabled = false
+                            print("Đã phát hiện làng:", village)
+                            SetSpawnAndReset(spawnName)
+                            return
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- Đảm bảo hàm hoạt động
+AutoDetectToggle:OnChanged(function(value)
+    if value then
+        detectDungeon()
+    end
+end)
+
+detectDungeon()
+
+local function resetAutoFarm()
+    -- Đặt lại tất cả trạng thái và hàm
+    killedNPCs = {} -- Đặt lại số lượng NPC đã tiêu diệt
+
+    print("AutoFarm đã được đặt lại!") -- In thông báo xác nhận
+
+    -- Khởi động lại tất cả các hàm nếu cần
+end
+
+task.spawn(function()
+    while true do
+        task.wait(120) -- Đợi 120 giây
+        resetAutoFarm() -- Gọi hàm đặt lại
+    end
+end)
+
+local rankMapping = { "E", "D", "C", "B", "A", "S", "SS" }
+
+-- Dropdown để chọn các cấp độ để bán
+local SellDropdown = Tabs.pets:AddDropdown("ChooseRankToSell", {
+    Title = "Choose Rank to Sell",
+    Values = rankMapping,
+    Multi = true,
+    Default = {}
+})
+
+-- Dropdown để chọn pet cần giữ lại
+local KeepPetsDropdown = Tabs.pets:AddDropdown("ChoosePetsToKeep", {
+    Title = "Pets to Not Delete",
+    Values = {},
+    Multi = true,
+    Default = {}
+})
+
+-- Nút để làm mới dropdown "Keep Pets"
+Tabs.pets:AddButton({
+    Title = "Refresh Keep Pets List",
+    Callback = function()
+        updateKeepPetsDropdown()
+    end
+})
+
+-- Hàm để lấy pet theo cấp độ đã chọn
+local function getPetsByRank(selectedRanks, keepPets)
+    local player = game:GetService("Players").LocalPlayer
+    local petsFolder = player.leaderstats.Inventory:FindFirstChild("Pets")
+    if not petsFolder then return {} end
+
+    local petsByRank = {}  -- Lưu trữ pet theo cấp độ
+    local petsToSell = {}  -- Các pet sẽ được bán
+    local keepOnePet = {}  -- Đảm bảo chỉ giữ 1 pet mỗi loại đã chọn
+
+    for _, pet in ipairs(petsFolder:GetChildren()) do
+        local rankValue = pet:GetAttribute("Rank")
+        local petName = pet.Name
+
+        if rankValue and rankMapping[rankValue] and selectedRanks[rankMapping[rankValue]] then
+            petsByRank[rankMapping[rankValue]] = petsByRank[rankMapping[rankValue]] or {}
+            table.insert(petsByRank[rankMapping[rankValue]], petName)
+        end
+    end
+
+    -- Xử lý từng cấp độ
+    for rank, petList in pairs(petsByRank) do
+        table.sort(petList) -- Sắp xếp pet để đảm bảo tính nhất quán
+
+        local keptOne = false
+        for _, pet in ipairs(petList) do
+            if keepPets[pet] then
+                if not keepOnePet[pet] then
+                    keepOnePet[pet] = true -- Chỉ giữ 1 bản sao của pet này
+                    keptOne = true
+                else
+                    table.insert(petsToSell, pet) -- Bán các bản sao thừa
+                end
+            elseif not keptOne then
+                keptOne = true -- Đảm bảo ít nhất 1 pet mỗi cấp độ được giữ lại
+            else
+                table.insert(petsToSell, pet) -- Bán các pet còn lại
+            end
+        end
+    end
+
+    return petsToSell
+end
+
+-- Hàm để bán pet
+local function sellPets()
+    local selectedRanks = SellDropdown.Value
+    local keepPets = KeepPetsDropdown.Value
+    local pets = getPetsByRank(selectedRanks, keepPets)
+
+    if #pets > 0 then
+        local args = {
+            [1] = {
+                [1] = {
+                    ["Event"] = "SellPet",
+                    ["Pets"] = pets
+                },
+                [2] = "\t"
+            }
+        }
+        game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent"):FireServer(unpack(args))
+    end
+end
+
+-- Hàm để cập nhật dropdown "Keep Pets"
+function updateKeepPetsDropdown()
+    local player = game:GetService("Players").LocalPlayer
+    local petsFolder = player.leaderstats.Inventory:FindFirstChild("Pets")
+    if not petsFolder then return end
+
+    local petNames = {} -- Mảng cho dropdown
+
+    for _, pet in ipairs(petsFolder:GetChildren()) do
+        if not table.find(petNames, pet.Name) then
+            table.insert(petNames, pet.Name) -- Thêm tên pet chỉ một lần
+        end
+    end
+
+    KeepPetsDropdown:SetValues(petNames) -- Cập nhật dropdown với tên pet
+end
+
+-- Bắt đầu vòng lặp bán
+local function startSellingLoop()
+    while true do
+        sellPets()
+        wait(1) -- Ngăn spam
+    end
+end
+
+-- Chạy vòng lặp trong một luồng riêng biệt
+spawn(startSellingLoop)
+
+-- Khởi tạo dropdown pet khi bắt đầu
+updateKeepPetsDropdown()
+
+-- Làm mới danh sách pet khi dropdown thay đổi
+SellDropdown:OnChanged(updateKeepPetsDropdown)
+KeepPetsDropdown:OnChanged(updateKeepPetsDropdown)
+
+local VirtualUser = game:GetService("VirtualUser")
+local LocalPlayer = game:GetService("Players").LocalPlayer
+
+local antiAfkConnection
+
+local AntiAfkToggle = Tabs.Player:AddToggle("AntiAfk", {
+    Title = "Anti AFK",
+    Default = false,
+    Callback = function(enabled)
+        if enabled then
+            print("Đã bật Anti AFK")
+            -- Đảm bảo không tạo nhiều kết nối
+            if not antiAfkConnection then
+                antiAfkConnection = LocalPlayer.Idled:Connect(function()
+                    VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+                    task.wait(1) -- Thời gian chờ có thể điều chỉnh
+                    VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+                end)
+            end
+        else
+            print("Đã tắt Anti AFK")
+            -- Ngắt kết nối sự kiện khi tắt
+            if antiAfkConnection then
+                antiAfkConnection:Disconnect()
+                antiAfkConnection = nil -- Đặt lại biến kết nối
+            end
+        end
+    end
+})
+
+
+
+local function getUniqueWeaponNames()
+    local weapons = {}
+    local seenNames = {} -- Để theo dõi tên duy nhất
+
+    local playerWeapons = game:GetService("Players").LocalPlayer.leaderstats.Inventory.Weapons:GetChildren()
+    print("Đang lấy danh sách vũ khí...") -- GỠ LỖI
+
+    for _, weapon in ipairs(playerWeapons) do
+        local weaponName = weapon:GetAttribute("Name") -- Lấy thuộc tính "Name"
+        if weaponName then
+            print("Đã tìm thấy vũ khí:", weaponName) -- GỠ LỖI
+            if not seenNames[weaponName] then
+                table.insert(weapons, weaponName)
+                seenNames[weaponName] = true -- Đánh dấu tên đã thấy
+            end
+        end
+    end
+    return weapons
+end
+
+-- Tạo dropdown với tên vũ khí **duy nhất**
+local weaponNames = getUniqueWeaponNames()
+local WeaponDropdown = Tabs.misc:AddDropdown("WeaponDropdown", {
+    Title = "Select Weapon to Upgrade",
+    Description = "Choose a weapon to upgrade",
+    Values = weaponNames,
+    Multi = false, -- Chọn một
+    Default = ""
+})
+
+-- Dropdown để chọn cấp độ nâng cấp (2-6)
+local LevelDropdown = Tabs.misc:AddDropdown("LevelDropdown", {
+    Title = "Select Upgrade Level",
+    Description = "Choose the level for upgrade",
+    Values = {"2", "3", "4", "5", "6", "7"},
+    Multi = false,
+    Default = "2"
+})
+
+-- Bật/tắt tự động nâng cấp vũ khí
+ local AutoUpgradeToggle = Tabs.misc:AddToggle("AutoUpgradeToggle", { Title = "Auto Upgrade Weapon", Default = false })
+
+local function AutoUpgradeWeapon()
+    while AutoUpgradeToggle.Value do
+        local selectedWeapon = WeaponDropdown.Value
+        local selectedLevel = tonumber(LevelDropdown.Value) or 2
+
+        if selectedWeapon and selectedWeapon ~= "" then
+            local args = {
+                [1] = {
+                    [1] = {
+                        ["Type"] = selectedWeapon,
+                        ["BuyType"] = "Gems",
+                        ["Weapons"] = {},
+                        ["Event"] = "UpgradeWeapon",
+                        ["Level"] = selectedLevel
+                    },
+                    [2] = "\n"
+                }
+            }
+
+            game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent"):FireServer(unpack(args))
+            task.wait(0.1) -- Điều chỉnh độ trễ nếu cần
+        else
+            Fluent:Notify({
+                Title = "Error",
+                Content = "Vui lòng chọn vũ khí trước khi nâng cấp.",
+                Duration = 5
+            })
+            print("LỖI: Không có vũ khí nào được chọn!") -- GỠ LỖI
+            break
+        end
+    end
+end
+
+AutoUpgradeToggle:OnChanged(function(Value)
+    if Value then
+        task.spawn(AutoUpgradeWeapon) -- Bắt đầu nâng cấp trong một luồng riêng biệt
+    end
+end)
+
+ local TeleportService = game:GetService("TeleportService")
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local LocalPlayer = Players.LocalPlayer
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local AppearFolder = workspace:FindFirstChild("__Extra") and workspace.__Extra:FindFirstChild("__Appear")
+
+local locations = {
+    {Name = "Location 1", CFrame = CFrame.new(-6161.25781, 140.639832, 5512.9668)},
+    {Name = "Location 2", CFrame = CFrame.new(-5868.44141, 132.70488, 362.519379)},
+    {Name = "Location 3", CFrame = CFrame.new(-5430.81006, 107.441559, -5502.25244)},
+    {Name = "Location 4", CFrame = CFrame.new(-702.243225, 133.344467, -3538.11646)},
+    {Name = "Location 5", CFrame = CFrame.new(450.001709, 117.564827, 3435.4292)},
+    {Name = "Location 6", CFrame = CFrame.new(3230.96826, 135.41008, 36.1600113)},
+    {Name = "Location 7", CFrame = CFrame.new(4325.36523, 118.995422, -4819.78857)}
+}
+
+local PlaceID = game.PlaceId
+local AllIDs = {}
+local foundAnything = ""
+local actualHour = os.date("!*t").hour
+local File = pcall(function()
+    AllIDs = game:GetService('HttpService'):JSONDecode(readfile("NotSameServers.json"))
+end)
+
+if not File then
+    table.insert(AllIDs, actualHour)
+    writefile("NotSameServers.json", game:GetService('HttpService'):JSONEncode(AllIDs))
+end
+
+function TPReturner()
+    local Site
+    if foundAnything == "" then
+        Site = game.HttpService:JSONDecode(game:HttpGet('https://games.roblox.com/v1/games/' .. PlaceID .. '/servers/Public?sortOrder=Asc&limit=100'))
+    else
+        Site = game.HttpService:JSONDecode(game:HttpGet('https://games.roblox.com/v1/games/' .. PlaceID .. '/servers/Public?sortOrder=Asc&limit=100&cursor=' .. foundAnything))
+    end
+    local ID = ""
+    if Site.nextPageCursor and Site.nextPageCursor ~= "null" and Site.nextPageCursor ~= nil then
+        foundAnything = Site.nextPageCursor
+    end
+    local num = 0
+    for _, v in pairs(Site.data) do
+        local Possible = true
+        ID = tostring(v.id)
+        if tonumber(v.maxPlayers) > tonumber(v.playing) then
+            for _, Existing in pairs(AllIDs) do
+                if num ~= 0 then
+                    if ID == tostring(Existing) then
+                        Possible = false
+                    end
+                else
+                    if tonumber(actualHour) ~= tonumber(Existing) then
+                        local delFile = pcall(function()
+                            delfile("NotSameServers.json")
+                            AllIDs = {}
+                            table.insert(AllIDs, actualHour)
+                        end)
+                    end
+                end
+                num = num + 1
+            end
+            if Possible then
+                table.insert(AllIDs, ID)
+                wait()
+                pcall(function()
+                    writefile("NotSameServers.json", game:GetService('HttpService'):JSONEncode(AllIDs))
+                    wait()
+                    game:GetService("TeleportService"):TeleportToPlaceInstance(PlaceID, ID, Players.LocalPlayer)
+                end)
+                wait(4)
+                break -- Thoát vòng lặp sau khi tìm thấy máy chủ phù hợp để dịch chuyển đến
+            end
+        end
+    end
+end
+
+local function hasSpawned()
+    return AppearFolder and #AppearFolder:GetChildren() > 0
+end
+
+local function tweenTeleport(targetCFrame)
+    if not Character or not Character:FindFirstChild("HumanoidRootPart") then return end
+    local HRP = Character.HumanoidRootPart
+    local Tween = TweenService:Create(HRP, TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {CFrame = targetCFrame})
+    Tween:Play()
+    Tween.Completed:Wait()
+end
+local function fireProximityPrompts()
+    if not AppearFolder then return end
+    for _, mount in ipairs(AppearFolder:GetChildren()) do
+        for _, descendant in ipairs(mount:GetDescendants()) do
+            if descendant:IsA("ProximityPrompt") then
+                fireproximityprompt(descendant)
+            end
+        end
+    end
+end
+
+local DelayToggle = false
+
+local function checkMountsAndTeleport()
+    local inventoryMounts = {}
+    for _, mount in ipairs(LocalPlayer.leaderstats.Inventory.Mounts:GetChildren()) do
+        table.insert(inventoryMounts, mount.Name:sub(1, 4))
+    end
+
+    for _, mount in ipairs(AppearFolder:GetChildren()) do
+        local mountId = mount.Name:sub(1, 4)
+        for _, invMount in ipairs(inventoryMounts) do
+            if mountId == invMount then
+                Fluent:Notify({
+                    Title = "Mount Detected!",
+                    Content = "Tìm thấy mount trùng khớp! Đang chuyển máy chủ...",
+                    Duration = 5
+                })
+                TPReturner()
+                return
+            end
+        end
+    end
+  for _, mount in ipairs(AppearFolder:GetChildren()) do
+        local targetPosition = mount:GetPivot()
+        tweenTeleport(targetPosition)
+
+        if DelayToggle then
+            task.wait(15)  -- Đợi 15 giây CHỈ KHI bật toggle
+        end
+
+        fireProximityPrompts()
+    end
+end
+
+local function teleportSequence()
+    for _, loc in ipairs(locations) do
+        tweenTeleport(loc.CFrame)
+        task.wait(3)
+
+        if hasSpawned() then
+            checkMountsAndTeleport()
+            Fluent:Notify({
+                Title = "Mount Collected!",
+                Content = "Đang chuyển máy chủ...",
+                Duration = 5
+            })
+            TPReturner()
+            return
+        end
+    end
+    TPReturner()
+end
+
+
+
+
+local TeleportToggle = Tabs.mount:AddToggle("AutoTeleport", {Title = "Auto Find Mount (serverHop)", Default = false })
+
+TeleportToggle:OnChanged(function(enabled)
+    if enabled then
+        teleportSequence()
+    end
+end)
+
+local DelayToggleOption = Tabs.mount:AddToggle("DelayBeforeFire", {Title = "Wait 15s ENABLE THIS IF U GET KICKED", Default = false })
+
+DelayToggleOption:OnChanged(function(enabled)
+    DelayToggle = enabled
+end)
+
+
+
+local function getUniquePetNames()
+    local pets = {}
+    local seenNames = {} -- To track unique names
+
+    local playerPets = game:GetService("Players").LocalPlayer.leaderstats.Inventory.Pets:GetChildren()
+    print("Fetching pets...") -- DEBUG
+
+    for _, pet in ipairs(playerPets) do
+        local petName = pet:GetAttribute("Name") -- Get "Name" attribute
+        if petName then
+            print("Found Pet:", petName) -- DEBUG
+            if not seenNames[petName] then
+                table.insert(pets, petName)
+                seenNames[petName] = true -- Mark name as seen
+            end
+        end
+    end
+    return pets
+end
+
+-- Populate dropdown with **unique** pet names
+
+
+
+
+
+
+
+local autoEquipEnabled = false
+
+local function EquipBestPets()
+    local player = game:GetService("Players").LocalPlayer
+    local petsFolder = player.leaderstats.Inventory.Pets
+    local maxEquip = player.leaderstats.Values:GetAttribute("MaxEquipPets") or 1
+    local bestPets = {}
+
+    local petsList = {}
+    for _, pet in ipairs(petsFolder:GetChildren()) do
+        local rank = pet:GetAttribute("Rank")
+        if rank and typeof(rank) == "number" then
+            table.insert(petsList, {name = pet.Name, rank = rank})
+        end
+    end
+
+    table.sort(petsList, function(a, b) return a.rank > b.rank end)
+
+    local equipCount = 0
+    for _, petData in ipairs(petsList) do
+        if equipCount < maxEquip then
+            table.insert(bestPets, petData.name)
+            equipCount = equipCount + 1
+        else
+            break
+        end
+    end
+
+    if #bestPets > 0 then
+        game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent"):FireServer({
+            {["Event"] = "EquipBest", ["Pets"] = bestPets},
+            "\n"
+        })
+    end
+end
+
+
+local Toggle = Tabs.pets:AddToggle("AutoEquip", { Title = "Auto Equip Best Pets", Default = false })
+
+Toggle:OnChanged(function(state)
+    autoEquipEnabled = state
+    if state then
+        Fluent:Notify({ Title = "Auto Equip", Content = "Enabled. Equipping every 2 minutes.", Duration = 5 })
+        task.spawn(function()
+            while autoEquipEnabled do
+                EquipBestPets()
+                wait(120)
+            end
+        end)
+    else
+        Fluent:Notify({ Title = "Auto Equip", Content = "Disabled.", Duration = 5 })
+    end
+end)
+
+Tabs.Player:AddButton({
+    Title = "Boost FPS",
+    Description = "Lowers graphics",
+    Callback = function()
+        local Optimizer = {Enabled = false}
+
+        local function DisableEffects()
+            for _, v in pairs(game:GetDescendants()) do
+                if v:IsA("ParticleEmitter") or v:IsA("Smoke") or v:IsA("Fire") or v:IsA("Sparkles") then
+                    v.Enabled = not Optimizer.Enabled
+                end
+                if v:IsA("PostEffect") or v:IsA("BloomEffect") or v:IsA("BlurEffect") or v:IsA("SunRaysEffect") then
+                    v.Enabled = not Optimizer.Enabled
+                end
+            end
+        end
+
+        local function MaximizePerformance()
+            local lighting = game:GetService("Lighting")
+            if Optimizer.Enabled then
+                lighting.GlobalShadows = false
+                lighting.FogEnd = 9e9
+                lighting.Brightness = 2
+                settings().Rendering.QualityLevel = 1
+                settings().Physics.PhysicsEnvironmentalThrottle = 1
+                settings().Rendering.MeshPartDetailLevel = Enum.MeshPartDetailLevel.Level01
+                settings().Physics.AllowSleep = true
+                settings().Physics.ForceCSGv2 = false
+                settings().Physics.DisableCSGv2 = true
+                settings().Rendering.EagerBulkExecution = true
+
+                game:GetService("StarterGui"):SetCore("TopbarEnabled", false)
+
+                settings().Network.IncomingReplicationLag = 0
+                settings().Rendering.MaxPartCount = 100000
+            else
+                lighting.GlobalShadows = true
+                lighting.FogEnd = 100000
+                lighting.Brightness = 3
+                settings().Rendering.QualityLevel = 7
+                settings().Physics.PhysicsEnvironmentalThrottle = 0
+                settings().Rendering.MeshPartDetailLevel = Enum.MeshPartDetailLevel.Level04
+                settings().Physics.AllowSleep = false
+                settings().Physics.ForceCSGv2 = true
+                settings().Physics.DisableCSGv2 = false
+                settings().Rendering.EagerBulkExecution = false
+
+                game:GetService("StarterGui"):SetCore("TopbarEnabled", true)
+
+                settings().Network.IncomingReplicationLag = 1
+                settings().Rendering.MaxPartCount = 500000
+            end
+        end
+
+        local function OptimizeInstances()
+            for _, v in pairs(game:GetDescendants()) do
+                if v:IsA("BasePart") then
+                    v.CastShadow = not Optimizer.Enabled
+                    v.Reflectance = Optimizer.Enabled and 0 or v.Reflectance
+                    v.Material = Optimizer.Enabled and Enum.Material.SmoothPlastic or v.Material
+                end
+                if v:IsA("Decal") or v:IsA("Texture") then
+                    v.Transparency = Optimizer.Enabled and 1 or 0
+                end
+                if v:IsA("MeshPart") then
+                    v.RenderFidelity = Optimizer.Enabled and Enum.RenderFidelity.Performance or Enum.RenderFidelity.Precise
+                end
+            end
+
+            game:GetService("Debris"):SetAutoCleanupEnabled(true)
+        end
+
+        local function CleanMemory()
+            if Optimizer.Enabled then
+                game:GetService("Debris"):AddItem(Instance.new("Model"), 0)
+                settings().Physics.ThrottleAdjustTime = 2
+                game:GetService("RunService"):Set3dRenderingEnabled(false)
+            else
+                game:GetService("RunService"):Set3dRenderingEnabled(true)
+            end
+        end
+
+        local function ToggleOptimizer()
+            Optimizer.Enabled = not Optimizer.Enabled
+            DisableEffects()
+            MaximizePerformance()
+            OptimizeInstances()
+            CleanMemory()
+            print("FPS Booster: " .. (Optimizer.Enabled and "ON" or "OFF"))
+        end
+
+        game:GetService("UserInputService").InputBegan:Connect(function(input)
+            if input.KeyCode == Enum.KeyCode.RightControl then
+                ToggleOptimizer()
+            end
+        end)
+
+        ToggleOptimizer()
+
+        game:GetService("RunService").Heartbeat:Connect(function()
+            if Optimizer.Enabled then
+                CleanMemory()
+            end
+        end)
+    end
+})
+
+
+
+local TweenService = game:GetService("TweenService")
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local hrp = character:WaitForChild("HumanoidRootPart")
+
+local targetCFrame = CFrame.new(
+    3648.76318, 223.552261, 2637.36719, 
+    0.846323907, 7.72367986e-18, -0.532668591, 
+    -1.10462046e-17, 1, -3.05065368e-18, 
+    0.532668591, 8.46580728e-18, 0.846323907
+)
+
+local function tweenToPivot()
+    hrp.CFrame = targetCFrame
+end
+
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+local speedValue = 16 -- Tốc độ di chuyển mặc định
+local jumpValue = 50  -- Lực nhảy mặc định
+local speedEnabled = false
+local jumpEnabled = false
+
+local function updateCharacter()
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        local humanoid = LocalPlayer.Character.Humanoid
+        humanoid.WalkSpeed = speedEnabled and speedValue or 16
+        humanoid.JumpPower = jumpEnabled and jumpValue or 50
+    end
+end
+
+-- Nhập tốc độ
+local SpeedInput = Tabs.Player:AddInput("SpeedInput", {
+    Title = "Speed",
+    Default = tostring(speedValue),
+    Placeholder = "Enter speed",
+    Numeric = true,
+    Finished = true, 
+    Callback = function(Value)
+        speedValue = tonumber(Value) or 16
+        updateCharacter() -- Cập nhật nhân vật ngay lập tức khi tốc độ thay đổi
+    end
+})
+
+-- Nhập lực nhảy
+local JumpInput = Tabs.Player:AddInput("JumpInput", {
+    Title = "Jump Power",
+    Default = tostring(jumpValue),
+    Placeholder = "Enter jump power",
+    Numeric = true,
+    Finished = true, 
+    Callback = function(Value)
+        jumpValue = tonumber(Value) or 50
+        updateCharacter() -- Cập nhật nhân vật ngay lập tức khi lực nhảy thay đổi
+    end
+})
+
+-- Bật/tắt tốc độ
+local SpeedToggle = Tabs.Player:AddToggle("SpeedToggle", {
+    Title = "Enable Speed",
+    Default = false
+})
+
+SpeedToggle:OnChanged(function(Value)
+    speedEnabled = Value
+    updateCharacter() -- Cập nhật nhân vật ngay lập tức khi toggle thay đổi
+end)
+
+-- Bật/tắt lực nhảy
+local JumpToggle = Tabs.Player:AddToggle("JumpToggle", {
+    Title = "Enable Jump Power",
+    Default = false
+})
+
+JumpToggle:OnChanged(function(Value)
+    jumpEnabled = Value
+    updateCharacter() -- Cập nhật nhân vật ngay lập tức khi toggle thay đổi
+end)
+
+-- Cập nhật nhân vật khi hồi sinh
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1) -- Đợi nhân vật tải xong
+    updateCharacter()
+end)
+
+-- Cập nhật ban đầu
+updateCharacter()
+
+local player = game.Players.LocalPlayer
+
+local function tweenCharacter(targetCFrame)
+    if player and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        local hrp = player.Character.HumanoidRootPart
+        local tweenService = game:GetService("TweenService")
+        local tweenInfo = TweenInfo.new(3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local tween = tweenService:Create(hrp, tweenInfo, {CFrame = targetCFrame})
+        tween:Play()
+    end
+end
+
+-- Thêm nút
+Tabs.tp:AddButton({
+    Title = "Tween to Dedu island",
+    Description = "Smoothly moves your character",
+    Callback = function()
+        tweenCharacter(CFrame.new(3859.06299, 60.1228409, 3081.9458, -0.987112403, 6.46206388e-07, -0.160028473, 5.63319077e-07, 1, 5.63319418e-07, 0.160028473, 4.65912507e-07, -0.987112403)) -- Thay đổi vị trí theo nhu cầu
+    end
+})
+
+
+
+local NoClipToggle = Tabs.Player:AddToggle("NoClipToggle", {
+    Title = "Enable NoClip",
+    Default = false
+})
+
+-- Hàm NoClip
+local noclipEnabled = false
+NoClipToggle:OnChanged(function(Value)
+    noclipEnabled = Value
+    if noclipEnabled then
+        task.spawn(function()
+            while noclipEnabled do
+                for _, part in ipairs(game.Players.LocalPlayer.Character:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = false
+                    end
+                end
+                task.wait()
+            end
+        end)
+    else
+        for _, part in ipairs(game.Players.LocalPlayer.Character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = true
+            end
+        end
+    end
+end)
+
+
+
+Tabs.Player:AddButton({
+    Title = "Server Hop",
+    Description = "Switches to a different server",
+    Callback = function()
+        local PlaceID = game.PlaceId
+        local AllIDs = {}
+        local foundAnything = ""
+        local actualHour = os.date("!*t").hour
+        local File = pcall(function()
+            AllIDs = game:GetService('HttpService'):JSONDecode(readfile("NotSameServers.json"))
+        end)
+        if not File then
+            table.insert(AllIDs, actualHour)
+            writefile("NotSameServers.json", game:GetService('HttpService'):JSONEncode(AllIDs))
+        end
+        local function TPReturner()
+            local Site
+            if foundAnything == "" then
+                Site = game.HttpService:JSONDecode(game:HttpGet('https://games.roblox.com/v1/games/' .. PlaceID .. '/servers/Public?sortOrder=Asc&limit=100'))
+            else
+                Site = game.HttpService:JSONDecode(game:HttpGet('https://games.roblox.com/v1/games/' .. PlaceID .. '/servers/Public?sortOrder=Asc&limit=100&cursor=' .. foundAnything))
+            end
+            for _, v in pairs(Site.data) do
+                if tonumber(v.maxPlayers) > tonumber(v.playing) then
+                    local ID = tostring(v.id)
+                    local isNewServer = true
+                    for _, existing in pairs(AllIDs) do
+                        if ID == tostring(existing) then
+                            isNewServer = false
+                            break
+                        end
+                    end
+                    if isNewServer then
+                        table.insert(AllIDs, ID)
+                        writefile("NotSameServers.json", game:GetService('HttpService'):JSONEncode(AllIDs))
+                        game:GetService("TeleportService"):TeleportToPlaceInstance(PlaceID, ID, game.Players.LocalPlayer)
+                        return
+                    end
+                end
+            end
+        end
+        TPReturner()
+    end
+})
+
+
+
+    
+
+        
+Tabs.dungeon:AddToggle("AutoBuyDungeonTicket", {
+    Title = "Auto Buy Dungeon Ticket",
+    Default = false,
+    Callback = function(state)
+        buyTicketEnabled = state
+        print("[DEBUG] Auto Buy Dungeon Ticket toggled:", state)
+        
+        if state then
+            task.spawn(function()
+                while buyTicketEnabled do
+                    local args = {
+                        [1] = {
+                            [1] = {
+                                ["Type"] = "Gems",
+                                ["Event"] = "DungeonAction",
+                                ["Action"] = "BuyTicket"
+                            },
+                            [2] = "\n"
+                        }
+                    }
+
+                    game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent"):FireServer(unpack(args))
+                    task.wait(5) -- Đợi 5 giây trước khi gửi lại
+                end
+            end)
+        end
+    end
+})
+
+
+
+    local localPlayer = game:GetService("Players").LocalPlayer
+local playerCharacter = localPlayer.Character or localPlayer.CharacterAdded:Wait()
+local playerHRP = playerCharacter:WaitForChild("HumanoidRootPart")
+local enemyContainer = workspace:WaitForChild("__Main"):WaitForChild("__Enemies"):WaitForChild("Client")
+local networkEvent = game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent")
+
+local autoFarmActive = false
+local defeatedEnemies = {}
+
+local function isTargetDefeated(target)
+    local healthUI = target:FindFirstChild("HealthBar")
+    if healthUI and healthUI:FindFirstChild("Main") and healthUI.Main:FindFirstChild("Bar") then
+        local healthText = healthUI.Main.Bar:FindFirstChild("Amount")
+        if healthText and healthText:IsA("TextLabel") and healthText.ContentText == "0 HP" then
+            return true
+        end
+    end
+    return false
+end
+
+local function findClosestTarget()
+    local closestJJ2, closestJJ3, closestJJ4 = nil, nil, nil
+    local distJJ2, distJJ3, distJJ4 = math.huge, math.huge, math.huge
+    local playerPos = localPlayer.Character and localPlayer.Character:GetPivot().Position
+
+    if not playerPos then return nil end
+
+    for _, enemy in ipairs(enemyContainer:GetChildren()) do
+        if enemy:IsA("Model") and enemy:FindFirstChild("HumanoidRootPart") then
+            local enemyType = enemy:GetAttribute("ID")
+            
+            -- Đảm bảo script bỏ qua các kẻ địch đã chết
+            if not defeatedEnemies[enemy.Name] then
+                local distance = (playerPos - enemy:GetPivot().Position).Magnitude
+                
+                if enemyType == "JJ2" and distance < distJJ2 then
+                    distJJ2 = distance
+                    closestJJ2 = enemy
+                elseif enemyType == "JJ3" and distance < distJJ3 then
+                    distJJ3 = distance
+                    closestJJ3 = enemy
+                elseif enemyType == "JJ4" and distance < distJJ4 then
+                    distJJ4 = distance
+                    closestJJ4 = enemy
+                end
+            end
+        end
+    end
+
+    -- Ưu tiên: JJ2 > JJ3 > JJ4
+    return closestJJ2 or closestJJ3 or closestJJ4
+end
+
+local function triggerPetVisibility()
+    local arguments = {
+        [1] = {
+            [1] = {
+                ["Event"] = "ShowPets"
+            },
+            [2] = "\t"
+        }
+    }
+    game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent"):FireServer(unpack(arguments))
+end
+
+local function startAutoFarm()
+    while autoFarmActive do
+        local targetEnemy = findClosestTarget()
+        
+        while autoFarmActive and targetEnemy do
+            if not targetEnemy.Parent then break end
+
+            local targetHRP = targetEnemy:FindFirstChild("HumanoidRootPart")
+            local playerHRP = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
+
+            if targetHRP and playerHRP then
+                -- Move to target enemy
+                playerHRP.CFrame = targetHRP.CFrame * CFrame.new(0, 0, 6)
+
+                task.wait(0.5)
+                triggerPetVisibility()
+
+                networkEvent:FireServer({
+                    {
+                        ["PetPos"] = {},
+                        ["AttackType"] = "All",
+                        ["Event"] = "Attack",
+                        ["Enemy"] = targetEnemy.Name
+                    },
+                    "\7"
+                })
+
+                -- Wait until enemy is defeated or a higher-priority one appears
+                while autoFarmActive and targetEnemy.Parent do
+                    if isTargetDefeated(targetEnemy) then
+                        defeatedEnemies[targetEnemy.Name] = true -- Mark it as dead immediately
+                        break
+                    end
+                    
+                    task.wait(0.1)
+                    
+                    -- Switch if a higher-priority target appears
+                    local newTarget = findClosestTarget()
+                    if newTarget and newTarget:GetAttribute("ID") == "JJ2" and newTarget ~= targetEnemy then
+                        break
+                    elseif newTarget and newTarget:GetAttribute("ID") == "JJ3" and targetEnemy:GetAttribute("ID") == "JJ4" then
+                        break
+                    end
+                end
+            end
+
+            targetEnemy = findClosestTarget() -- Move to next enemy
+        end
+
+        task.wait(0.20)
+    end
+end
+
+Tabs.Main:AddToggle("AutoFarmToggle", {
+    Title = "auto Jeju farm",
+    Default = false,
+    Callback = function(state)
+        autoFarmActive = state
+        if state then
+            task.spawn(startAutoFarm)
+        end
+    end
+})
+
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LocalPlayer = Players.LocalPlayer
+local Inventory = LocalPlayer:FindFirstChild("leaderstats") and LocalPlayer.leaderstats:FindFirstChild("Inventory")
+
+
+
+
+
+local SelectedLevel = 1
+local SellingEnabled = false
+
+-- Dropdown để chọn cấp độ vũ khí (đã chuyển sang tab Misc)
+local Dropdown = Tabs.misc:AddDropdown("WeaponLevel", {
+    Title = "Select Weapon Level",
+    Values = {"1", "2", "4", "5", "6", "7"},
+    Multi = false,
+    Default = "1",
+})
+
+Dropdown:OnChanged(function(Value)
+    SelectedLevel = tonumber(Value)
+end)
+
+-- Bật/tắt tự động bán (đã chuyển sang tab Misc)
+local Toggle = Tabs.misc:AddToggle("AutoSell", { Title = "Auto-Sell Weapons", Default = false })
+
+Toggle:OnChanged(function(Value)
+    SellingEnabled = Value
+end)
+
+-- Hàm để bán vũ khí dựa trên cấp độ đã chọn
+local function SellWeapons()
+    if not Inventory or not SellingEnabled then return end
+    
+    for _, weapon in ipairs(Inventory.Weapons:GetChildren()) do
+        local level = weapon:GetAttribute("Level")
+        if level == SelectedLevel then
+            local args = {
+                [1] = {
+                    [1] = {
+                        ["Action"] = "Sell",
+                        ["Event"] = "WeaponAction",
+                        ["Name"] = weapon.Name
+                    },
+                    [2] = "\n"
+                }
+            }
+            ReplicatedStorage:WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent"):FireServer(unpack(args))
+            
+        end
+    end
+end
+
+-- Vòng lặp liên tục kiểm tra vũ khí để bán
+task.spawn(function()
+    while task.wait(0.5) do
+        if SellingEnabled then
+            SellWeapons()
+        end
+    end
+end)
+
+
+local AutoEnterDungeon = Tabs.dungeon:AddToggle("AutoEnterDungeon", { Title = "Auto Enter Guild Dungeon", Default = false })
+
+local function EnterDungeon()
+    while AutoEnterDungeon.Value do
+        local args = {
+            [1] = {
+                [1] = {
+                    ["Event"] = "DungeonAction",
+                    ["Action"] = "TestEnter"
+                },
+                [2] = "\n"
+            }
+        }
+
+        game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent"):FireServer(unpack(args))
+        task.wait(0.5) -- Điều chỉnh độ trễ nếu cần
+    end
+end
+
+AutoEnterDungeon:OnChanged(function(Value)
+    if Value then
+        task.spawn(EnterDungeon) -- Start loop when enabled
+    end
+end)
+
+Tabs.Discord:AddParagraph({
+    Title = "🎉 Chào mừng đến với Etherbyte Hub Premium!",
+    Content = "Mở khóa trải nghiệm tốt nhất với các tính năng cao cấp của chúng tôi!\n\n" ..
+              "✅ **Vượt qua Anti-Cheat nâng cao** – Luôn an toàn và không bị phát hiện.\n" ..
+              "⚡ **Thực thi nhanh hơn & Tối ưu hóa** – Tận hưởng gameplay mượt mà hơn.\n" ..
+              "🔄 **Cập nhật độc quyền** – Tiếp cận sớm các tính năng mới.\n" ..
+              "🎁 **Hỗ trợ & Cộng đồng cao cấp** – Kết nối với các người dùng ưu tú khác.\n\n" ..
+              "Nâng cấp ngay và nâng cao trải nghiệm chơi game của bạn!"
+})
+
+Tabs.Discord:AddButton({
+    Title = "Copy Discord Link",
+    Description = "Copies the Discord invite link to clipboard",
+    Callback = function()
+        setclipboard("https://discord.gg/W77Vj2HNBA")
+        Fluent:Notify({
+            Title = "Đã sao chép!",
+            Content = "Đường dẫn Discord đã được sao chép vào clipboard.",
+            Duration = 3
+        })
+    end
+})
+
+
+SaveManager:SetLibrary(Fluent)
+InterfaceManager:SetLibrary(Fluent)
+
+-- Thay đổi cách lưu cấu hình để sử dụng tên người chơi
+local playerName = game:GetService("Players").LocalPlayer.Name
+InterfaceManager:SetFolder("KaihonScriptHub")
+SaveManager:SetFolder("KaihonScriptHub/AriseCrossover/" .. playerName)
+
+-- Xóa đoạn xây dựng phần cấu hình trong Settings tab
+-- InterfaceManager:BuildInterfaceSection(Tabs.Settings)
+-- SaveManager:BuildConfigSection(Tabs.Settings)
+
+-- Thêm thông tin vào tab Settings
+Tabs.Settings:AddParagraph({
+    Title = "Cấu hình tự động",
+    Content = "Cấu hình của bạn đang được tự động lưu theo tên nhân vật: " .. playerName
+})
+
+Tabs.Settings:AddParagraph({
+    Title = "Phím tắt",
+    Content = "Nhấn LeftControl để ẩn/hiện giao diện"
+})
+
+-- Thêm nút xóa cấu hình hiện tại
+Tabs.Settings:AddButton({
+    Title = "Xóa cấu hình hiện tại",
+    Description = "Đặt lại tất cả cài đặt về mặc định",
+    Callback = function()
+        SaveManager:Delete("AutoSave_" .. playerName)
+        Fluent:Notify({
+            Title = "Đã xóa cấu hình",
+            Content = "Tất cả cài đặt đã được đặt lại về mặc định",
+            Duration = 3
+        })
+    end
+})
+
+Window:SelectTab(1)
+
+Fluent:Notify({
+    Title = "Kaihon Hub",
+    Content = "Script đã tải xong! Cấu hình tự động lưu theo tên người chơi: " .. playerName,
+    Duration = 3
+})
+
+-- Thay đổi cách tải cấu hình
+local function AutoSaveConfig()
+    local configName = "AutoSave_" .. playerName
+    
+    -- Tự động lưu cấu hình hiện tại
+    task.spawn(function()
+        while task.wait(5) do -- Lưu mỗi 5 giây
+            pcall(function()
+                SaveManager:Save(configName)
+            end)
+        end
+    end)
+    
+    -- Tải cấu hình đã lưu nếu có
+    pcall(function()
+        SaveManager:Load(configName)
+    end)
+end
+
+-- Thực thi tự động lưu/tải cấu hình
+AutoSaveConfig()
+
+-- Thêm hỗ trợ Mobile UI
+repeat task.wait(0.25) until game:IsLoaded()
+getgenv().Image = "rbxassetid://13099788281" -- ID tài nguyên hình ảnh đã sửa
+getgenv().ToggleUI = "LeftControl" -- Phím để bật/tắt giao diện
+
+-- Tạo giao diện mobile cho người dùng điện thoại
+task.spawn(function()
+    local success, errorMsg = pcall(function()
+        if not getgenv().LoadedMobileUI == true then 
+            getgenv().LoadedMobileUI = true
+            local OpenUI = Instance.new("ScreenGui")
+            local ImageButton = Instance.new("ImageButton")
+            local UICorner = Instance.new("UICorner")
+            
+            -- Kiểm tra thiết bị
+            if syn and syn.protect_gui then
+                syn.protect_gui(OpenUI)
+                OpenUI.Parent = game:GetService("CoreGui")
+            elseif gethui then
+                OpenUI.Parent = gethui()
+            else
+                OpenUI.Parent = game:GetService("CoreGui")
+            end
+            
+            OpenUI.Name = "OpenUI"
+            OpenUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+            
+            ImageButton.Parent = OpenUI
+            ImageButton.BackgroundColor3 = Color3.fromRGB(105,105,105)
+            ImageButton.BackgroundTransparency = 0.8
+            ImageButton.Position = UDim2.new(0.9,0,0.1,0)
+            ImageButton.Size = UDim2.new(0,50,0,50)
+            ImageButton.Image = getgenv().Image
+            ImageButton.Draggable = true
+            ImageButton.Transparency = 0.2
+            
+            UICorner.CornerRadius = UDim.new(0,200)
+            UICorner.Parent = ImageButton
+            
+            ImageButton.MouseButton1Click:Connect(function()
+                game:GetService("VirtualInputManager"):SendKeyEvent(true,getgenv().ToggleUI,false,game)
+            end)
+        end
+    end)
+    
+    if not success then
+        warn("Lỗi khi tạo nút Mobile UI: " .. tostring(errorMsg))
+    end
+end)
+
+-- Kiểm tra script đã tải thành công
+local scriptSuccess, scriptError = pcall(function()
+    Fluent:Notify({
+        Title = "Script đã khởi động thành công",
+        Content = "Kaihon Hub | Arise Crossover đang hoạt động",
+        Duration = 5
+    })
+end)
+
+if not scriptSuccess then
+    warn("Lỗi khi khởi động script: " .. tostring(scriptError))
+    -- Thử cách khác để thông báo người dùng
+    if game:GetService("Players").LocalPlayer and game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui") then
+        local screenGui = Instance.new("ScreenGui")
+        screenGui.Parent = game:GetService("Players").LocalPlayer.PlayerGui
+        
+        local textLabel = Instance.new("TextLabel")
+        textLabel.Size = UDim2.new(0.3, 0, 0.1, 0)
+        textLabel.Position = UDim2.new(0.35, 0, 0.45, 0)
+        textLabel.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        textLabel.Text = "Kaihon Hub đã khởi động nhưng gặp lỗi. Hãy thử lại."
+        textLabel.Parent = screenGui
+        
+        local uiCorner = Instance.new("UICorner")
+        uiCorner.CornerRadius = UDim.new(0, 8)
+        uiCorner.Parent = textLabel
+        
+        game:GetService("Debris"):AddItem(screenGui, 5)
+    end
+end
+
+-- Thêm event listener để lưu ngay khi thay đổi giá trị
+local function setupSaveEvents()
+    for _, tab in pairs(Tabs) do
+        for _, element in pairs(tab._components) do
+            if element.OnChanged then
+                element.OnChanged:Connect(function()
+                    pcall(function()
+                        SaveManager:Save("AutoSave_" .. playerName)
+                    end)
+                end)
+            end
+        end
+    end
+end
+
+-- Thực thi tự động lưu/tải cấu hình
+AutoSaveConfig()
+setupSaveEvents() -- Thêm dòng này
+
+
+
+
+
