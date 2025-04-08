@@ -119,10 +119,12 @@ local function getNearestSelectedEnemy(specificMob)
                     if specificMob then
                         isSelected = (mobName == specificMob)
                     else
-                        for mob, _ in pairs(selectedMobs) do
-                            if mobName == mob then
-                                isSelected = true
-                                break
+                        if selectedMobs then
+                            for mob, _ in pairs(selectedMobs) do
+                                if mobName == mob then
+                                    isSelected = true
+                                    break
+                                end
                             end
                         end
                     end
@@ -255,9 +257,11 @@ local function teleportToSelectedEnemy()
         
         -- Kiểm tra nếu danh sách mob trống
         local hasMobs = false
-        for _, _ in pairs(selectedMobs) do
-            hasMobs = true
-            break
+        if selectedMobs then
+            for _, _ in pairs(selectedMobs) do
+                hasMobs = true
+                break
+            end
         end
         
         -- Nếu không có mob nào được chọn, thử farm tất cả mob trong world hiện tại
@@ -287,8 +291,8 @@ local function teleportToSelectedEnemy()
                 targetFound = true
             end
         else
-            -- Lặp qua từng mob được chọn
-            for mobName, _ in pairs(selectedMobs) do
+            -- Lặp qua từng mob được chọn - đảm bảo selectedMobs là table
+            for mobName, _ in pairs(selectedMobs or {}) do
                 local target = getNearestSelectedEnemy(mobName)
                 if target and target.Parent then
                     anticheat()
@@ -410,8 +414,18 @@ local worldToSpawnCode = {
     ["JojoWorld"] = "JojoWorld"
 }
 
+-- Thay đổi cấu trúc dữ liệu để selectedMobs luôn là table
 local selectedWorld = ConfigSystem.CurrentConfig.SelectedWorld or "SoloWorld" -- Default world
-local selectedMobs = ConfigSystem.CurrentConfig.SelectedMobs or {} -- Danh sách các mob được chọn
+local selectedMobs = {}
+
+-- Đảm bảo SelectedMobs luôn là table
+if ConfigSystem.CurrentConfig.SelectedMobs then
+    selectedMobs = ConfigSystem.CurrentConfig.SelectedMobs
+else
+    selectedMobs = {}
+    ConfigSystem.CurrentConfig.SelectedMobs = selectedMobs
+    ConfigSystem.SaveConfig()
+end
 
 -- Hàm teleport tới world và cập nhật mob
 local function teleportToWorldAndUpdateMobs(world)
@@ -478,12 +492,14 @@ Tabs.Main:AddDropdown("WorldMobDropdown", {
     Title = "Select Enemy",
     Values = mobsByWorld[selectedWorld] or {},
     Multi = true, -- Cho phép chọn nhiều
-    Default = selectedMobs,
+    Default = selectedMobs or {},
     Callback = function(mobs)
-        selectedMobs = mobs
-        ConfigSystem.CurrentConfig.SelectedMobs = mobs
-        ConfigSystem.SaveConfig()
-        killedNPCs = {} -- Đặt lại danh sách NPC đã tiêu diệt khi thay đổi mob
+        if mobs then
+            selectedMobs = mobs
+            ConfigSystem.CurrentConfig.SelectedMobs = mobs
+            ConfigSystem.SaveConfig()
+            killedNPCs = {} -- Đặt lại danh sách NPC đã tiêu diệt khi thay đổi mob
+        end
     end
 })
 
@@ -2240,14 +2256,16 @@ end
 
 -- Thêm event listener để lưu ngay khi thay đổi giá trị
 local function setupSaveEvents()
-    for _, tab in pairs(Tabs) do
-        for _, element in pairs(tab._components) do
-            if element.OnChanged then
-                element.OnChanged:Connect(function()
-                    pcall(function()
-                        SaveManager:Save("AutoSave_" .. playerName)
+    for _, tab in pairs(Tabs or {}) do
+        if tab and tab._components then
+            for _, element in pairs(tab._components) do
+                if element and element.OnChanged then
+                    element.OnChanged:Connect(function()
+                        pcall(function()
+                            SaveManager:Save("AutoSave_" .. player.Name)
+                        end)
                     end)
-                end)
+                end
             end
         end
     end
