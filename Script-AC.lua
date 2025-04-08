@@ -427,38 +427,78 @@ else
     ConfigSystem.SaveConfig()
 end
 
--- Hàm teleport tới world và cập nhật mob
-local function teleportToWorldAndUpdateMobs(world)
+-- Hàm để xác định world hiện tại dựa trên vị trí
+local function getCurrentWorld()
+    -- Vị trí tham chiếu cho từng world (có thể thay đổi tọa độ để phù hợp với game)
+    local worldPositions = {
+        ["SoloWorld"] = Vector3.new(0, 0, 0),       -- Thay bằng tọa độ thực của SoloWorld
+        ["NarutoWorld"] = Vector3.new(0, 0, 0),     -- Thay bằng tọa độ thực của NarutoWorld
+        ["OPWorld"] = Vector3.new(0, 0, 0),         -- Thay bằng tọa độ thực của OPWorld
+        ["BleachWorld"] = Vector3.new(0, 0, 0),     -- Thay bằng tọa độ thực của BleachWorld
+        ["BCWorld"] = Vector3.new(0, 0, 0),         -- Thay bằng tọa độ thực của BCWorld
+        ["JojoWorld"] = Vector3.new(0, 0, 0)        -- Thay bằng tọa độ thực của JojoWorld
+    }
+    
+    -- Kiểm tra thuộc tính Spawn của LocalPlayer
+    local playerSpawn = player:GetAttribute("Spawn")
+    if playerSpawn and worldToSpawnCode[playerSpawn] then
+        return playerSpawn
+    end
+    
+    -- Backup: Kiểm tra theo tên đảo
+    for worldName, _ in pairs(worldToSpawnCode) do
+        -- Có thể thêm logic để xác định world hiện tại dựa trên vị trí hoặc các yếu tố khác
+        if workspace:FindFirstChild("__Main") and workspace.__Main:FindFirstChild("__Map") then
+            -- Đây chỉ là ví dụ, cần điều chỉnh logic này theo cấu trúc thực tế của game
+            local mapName = workspace.__Main.__Map:GetAttribute("ID")
+            if mapName and string.find(mapName, worldName) then
+                return worldName
+            end
+        end
+    end
+    
+    return nil -- Không xác định được world hiện tại
+end
+
+-- Hàm teleport tới world và cập nhật mob, với kiểm tra world hiện tại
+local function teleportToWorldAndUpdateMobs(world, skipTeleport)
     -- Lưu lại world được chọn
     selectedWorld = world
     ConfigSystem.CurrentConfig.SelectedWorld = world
     ConfigSystem.SaveConfig()
     
-    -- Teleport đến world tương ứng
-    local spawnCode = worldToSpawnCode[world]
-    if spawnCode then
-        local args = {
-            [1] = {
+    -- Kiểm tra xem đã ở đúng world chưa
+    local currentWorld = getCurrentWorld()
+    local shouldTeleport = not skipTeleport and (currentWorld ~= world)
+    
+    -- Chỉ teleport nếu cần thiết
+    if shouldTeleport then
+        -- Teleport đến world tương ứng
+        local spawnCode = worldToSpawnCode[world]
+        if spawnCode then
+            local args = {
                 [1] = {
-                    ["Event"] = "ChangeSpawn",
-                    ["Spawn"] = spawnCode
-                },
-                [2] = "\n"
+                    [1] = {
+                        ["Event"] = "ChangeSpawn",
+                        ["Spawn"] = spawnCode
+                    },
+                    [2] = "\n"
+                }
             }
-        }
-        
-        local remote = game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent")
-        remote:FireServer(unpack(args))
-        
-        -- Đợi một chút trước khi hồi sinh
-        task.wait(0.5)
-        
-        -- Hồi sinh nhân vật
-        local player = game.Players.LocalPlayer
-        if player.Character and player.Character.Parent then
-            local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
-            if humanoid then
-                humanoid.Health = 0
+            
+            local remote = game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent")
+            remote:FireServer(unpack(args))
+            
+            -- Đợi một chút trước khi hồi sinh
+            task.wait(0.5)
+            
+            -- Hồi sinh nhân vật
+            local player = game.Players.LocalPlayer
+            if player.Character and player.Character.Parent then
+                local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    humanoid.Health = 0
+                end
             end
         end
     end
@@ -468,11 +508,13 @@ local function teleportToWorldAndUpdateMobs(world)
     if mobDropdown then
         mobDropdown:SetValues(mobsByWorld[world] or {})
         
-        -- Reset mob selection khi chuyển world
-        selectedMobs = {}
-        ConfigSystem.CurrentConfig.SelectedMobs = selectedMobs
-        ConfigSystem.SaveConfig()
-        killedNPCs = {} -- Đặt lại danh sách NPC đã tiêu diệt
+        -- Chỉ reset mob selection khi thực sự chuyển world, không reset khi khởi động script
+        if shouldTeleport then
+            selectedMobs = {}
+            ConfigSystem.CurrentConfig.SelectedMobs = selectedMobs
+            ConfigSystem.SaveConfig()
+            killedNPCs = {} -- Đặt lại danh sách NPC đã tiêu diệt
+        end
     end
 end
 
@@ -483,7 +525,7 @@ Tabs.Main:AddDropdown("WorldDropdown", {
     Multi = false,
     Default = selectedWorld,
     Callback = function(world)
-        teleportToWorldAndUpdateMobs(world)
+        teleportToWorldAndUpdateMobs(world, false) -- false = don't skip teleport
     end
 })
 
@@ -2274,6 +2316,49 @@ end
 -- Thực thi tự động lưu/tải cấu hình
 AutoSaveConfig()
 setupSaveEvents() -- Thêm dòng này
+
+-- Khởi tạo script và load cấu hình
+local function initializeScript()
+    -- Tải world và mob từ cấu hình
+    if ConfigSystem.CurrentConfig.SelectedWorld then
+        -- Kiểm tra xem đã ở đúng world chưa
+        teleportToWorldAndUpdateMobs(ConfigSystem.CurrentConfig.SelectedWorld, true) -- true = skipTeleport, chỉ cập nhật UI
+    end
+    
+    -- Khởi động lại các tính năng farm nếu đã được bật trước đó
+    if ConfigSystem.CurrentConfig.FarmSelectedMob then
+        teleportEnabled = true
+        damageEnabled = true
+        task.spawn(teleportToSelectedEnemy)
+    end
+    
+    if ConfigSystem.CurrentConfig.AutoFarmNearestNPCs then
+        teleportEnabled = true
+        task.spawn(teleportAndTrackDeath)
+    end
+    
+    if ConfigSystem.CurrentConfig.DamageMobs then
+        damageEnabled = true
+        task.spawn(attackEnemy)
+    end
+    
+    if ConfigSystem.CurrentConfig.MainAutoDestroy then
+        autoDestroy = true
+        task.spawn(fireDestroy)
+    end
+    
+    if ConfigSystem.CurrentConfig.MainAutoArise then
+        autoArise = true
+        task.spawn(fireArise)
+    end
+end
+
+-- Chạy khởi tạo khi script bắt đầu
+task.spawn(function()
+    -- Đợi một chút để đảm bảo game đã load đầy đủ
+    task.wait(1)
+    initializeScript()
+end)
 
 
 
