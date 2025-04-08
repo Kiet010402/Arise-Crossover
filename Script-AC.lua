@@ -513,30 +513,7 @@ Tabs.Main:AddToggle("FarmSelectedMob", {
         ConfigSystem.SaveConfig()
         killedNPCs = {} -- Đặt lại danh sách NPC đã tiêu diệt khi bắt đầu farm
         if state then
-            -- Thông báo đang đợi
-            Fluent:Notify({
-                Title = "Farm Delay",
-                Content = "Đang khởi động Farm...\nVui lòng đợi 6 giây",
-                Duration = 6
-            })
-            
-            -- Sử dụng task.delay để tạo độ trễ 6 giây
-            task.delay(6, function()
-                if teleportEnabled then -- kiểm tra lại nếu vẫn bật
-                    Fluent:Notify({
-                        Title = "Bắt đầu Farm",
-                        Content = "Đã kích hoạt chức năng Farm",
-                        Duration = 3
-                    })
-                    task.spawn(teleportToSelectedEnemy)
-                end
-            end)
-        else
-            Fluent:Notify({
-                Title = "Farm Dừng",
-                Content = "Đã dừng chức năng Farm",
-                Duration = 3
-            })
+            task.spawn(teleportToSelectedEnemy)
         end
     end
 })
