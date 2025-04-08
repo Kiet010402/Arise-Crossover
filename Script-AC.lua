@@ -328,13 +328,56 @@ local Tabs = {
     Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
 }
 
-Tabs.Main:AddInput("MobNameInput", {
-    Title = "Enter Mob Name",
-    Default = ConfigSystem.CurrentConfig.SelectedMobName or "",
-    Placeholder = "Type Here",
-    Callback = function(text)
-        selectedMobName = text
-        ConfigSystem.CurrentConfig.SelectedMobName = text
+-- Tạo mapping giữa các map và danh sách mob tương ứng
+local mobsByWorld = {
+    ["SoloWorld"] = {"Soondoo", "Gonshee", "Daek", "Longin", "Anders", "Largalgan"},
+    ["NarutoWorld"] = {"Snake Man", "Blossom", "Black Crow"},
+    ["OPWorld"] = {"Neptune", "Jollyn", "Namyura", "KayAy", "Zoro"},
+    ["BleachWorld"] = {"Orihime", "Chad", "Ishida", "Rukia", "Toshiro"},
+    ["BCWorld"] = {"Gojo", "Yuta", "Yuji", "Nobara", "Megumi"},
+    ["JojoWorld"] = {"Jotaro", "Josuke", "Giorno", "Jolyne", "Johnny"}
+}
+
+local selectedWorld = "SoloWorld" -- Default world
+
+-- Dropdown để chọn World/Map
+Tabs.Main:AddDropdown("WorldDropdown", {
+    Title = "Select World",
+    Values = {"SoloWorld", "NarutoWorld", "OPWorld", "BleachWorld", "BCWorld", "JojoWorld"},
+    Multi = false,
+    Default = selectedWorld,
+    Callback = function(world)
+        selectedWorld = world
+        ConfigSystem.CurrentConfig.SelectedWorld = world
+        
+        -- Cập nhật danh sách mob dựa trên world được chọn
+        local mobDropdown = Fluent.Options.WorldMobDropdown
+        if mobDropdown then
+            mobDropdown:SetValues(mobsByWorld[world] or {})
+            -- Đặt giá trị mặc định nếu có mob
+            if #mobsByWorld[world] > 0 then
+                selectedMobName = mobsByWorld[world][1]
+                mobDropdown:SetValue(selectedMobName)
+                ConfigSystem.CurrentConfig.SelectedMobName = selectedMobName
+            else
+                selectedMobName = ""
+            end
+        end
+        
+        ConfigSystem.SaveConfig()
+        killedNPCs = {} -- Đặt lại danh sách NPC đã tiêu diệt khi thay đổi world
+    end
+})
+
+-- Dropdown để chọn Mob trong world đã chọn
+Tabs.Main:AddDropdown("WorldMobDropdown", {
+    Title = "Select Enemy",
+    Values = mobsByWorld[selectedWorld] or {},
+    Multi = false,
+    Default = mobsByWorld[selectedWorld] and mobsByWorld[selectedWorld][1] or "",
+    Callback = function(mob)
+        selectedMobName = mob
+        ConfigSystem.CurrentConfig.SelectedMobName = mob
         ConfigSystem.SaveConfig()
         killedNPCs = {} -- Đặt lại danh sách NPC đã tiêu diệt khi thay đổi mob
         print("Selected Mob:", selectedMobName) -- Gỡ lỗi
