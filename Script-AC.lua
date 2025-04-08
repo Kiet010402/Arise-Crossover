@@ -341,13 +341,13 @@ local mobsByWorld = {
 
 -- Thêm tọa độ của từng world
 local worldCoordinates = {
-    ["SoloWorld"] = CFrame.new(563.0377197265625, 42.79697799682617, 928.4114379882812),
-    ["NarutoWorld"] = CFrame.new(-3391.279052734375, 70.46292114257812, 2751.94091796875),
-    ["OPWorld"] = CFrame.new(-3472.33984375, 120.56903076171875, -2382.326171875),
-    ["BleachWorld"] = CFrame.new(3019.1357421875, 89.3877944946289, -3119.5771484375),
-    ["BCWorld"] = CFrame.new(79.08283996582031, 70.1742935180664, 4813.76611328125),
-    ["ChainsawWorld"] = CFrame.new(185.05712890625, 149.93545532226562, -4930.76953125),
-    ["JojoWorld"] = CFrame.new(5413.0341796875, 59.8076057434082, -129.16357421875)
+    ["SoloWorld"] = CFrame.new(576.62, 28.43, 263.71),
+    ["NarutoWorld"] = CFrame.new(-3380.24, 30.26, 2257.26),
+    ["OPWorld"] = CFrame.new(-2851.12, 49.40, -2011.39),
+    ["BleachWorld"] = CFrame.new(2641.80, 45.43, -2645.08),
+    ["BCWorld"] = CFrame.new(198.34, 38.71, 4296.11),
+    ["ChainsawWorld"] = CFrame.new(2640.70, 45.43, -2642.79),
+    ["JojoWorld"] = CFrame.new(4816.32, 29.94, -120.23)
 }
 
 -- Hàm teleport đến world
@@ -549,10 +549,10 @@ end
 end
 
 Tabs.tp:AddButton({
-    Title = "Brum Island",
+    Title = "Solo City",
     Description = "Set spawn & reset",
     Callback = function()
-        SetSpawnAndReset("OPWorld") -- Thay đổi thành tên điểm hồi sinh đúng
+        SetSpawnAndReset("SoloWorld")
     end
 })
 
@@ -565,10 +565,10 @@ Tabs.tp:AddButton({
 })
 
 Tabs.tp:AddButton({
-    Title = "Solo City",
+    Title = "Brum Island",
     Description = "Set spawn & reset",
     Callback = function()
-        SetSpawnAndReset("SoloWorld")
+        SetSpawnAndReset("OPWorld") -- Thay đổi thành tên điểm hồi sinh đúng
     end
 })
 
@@ -585,6 +585,14 @@ Tabs.tp:AddButton({
     Description = "Set spawn & reset",
     Callback = function()
         SetSpawnAndReset("BCWorld")
+    end
+})
+
+Tabs.tp:AddButton({
+    Title = "Nipon City",
+    Description = "Set spawn & reset",
+    Callback = function()
+        SetSpawnAndReset("ChainsawWorld")
     end
 })
 
