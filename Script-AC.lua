@@ -90,51 +90,63 @@ local function anticheat()
     end
 end
 
+-- Sửa hàm isEnemyDead để thêm kiểm tra nil
 local function isEnemyDead(enemy)
+    if not enemy then return true end
+    
     local healthBar = enemy:FindFirstChild("HealthBar")
-    if healthBar and healthBar:FindFirstChild("Main") and healthBar.Main:FindFirstChild("Bar") then
-        local amount = healthBar.Main.Bar:FindFirstChild("Amount")
-        if amount and amount:IsA("TextLabel") and amount.ContentText == "0 HP" then
-            return true
-        end
-    end
-    return false
+    if not healthBar then return false end
+    
+    local main = healthBar:FindFirstChild("Main")
+    if not main then return false end
+    
+    local bar = main:FindFirstChild("Bar")
+    if not bar then return false end
+    
+    local amount = bar:FindFirstChild("Amount")
+    if not amount or not amount:IsA("TextLabel") then return false end
+    
+    return amount.ContentText == "0 HP"
 end
 
+-- Sửa hàm getNearestSelectedEnemy để thêm kiểm tra nil
 local function getNearestSelectedEnemy(specificMob)
     local nearestEnemy = nil
     local shortestDistance = math.huge
     local playerPosition = hrp.Position
 
     for _, enemy in ipairs(enemiesFolder:GetChildren()) do
-        if enemy:IsA("Model") and enemy:FindFirstChild("HumanoidRootPart") then
+        if enemy and enemy:IsA("Model") and enemy:FindFirstChild("HumanoidRootPart") then
             local healthBar = enemy:FindFirstChild("HealthBar")
-            if healthBar and healthBar:FindFirstChild("Main") and healthBar.Main:FindFirstChild("Title") then
-                local title = healthBar.Main.Title
-                if title and title:IsA("TextLabel") then
-                    local mobName = title.ContentText
-                    -- Nếu mob cụ thể được chỉ định, chỉ tìm mob đó
-                    -- Nếu không, tìm bất kỳ mob nào trong danh sách được chọn
-                    local isSelected = false
-                    if specificMob then
-                        isSelected = (mobName == specificMob)
-                    else
-                        if selectedMobs then
-                            for mob, _ in pairs(selectedMobs) do
-                                if mobName == mob then
-                                    isSelected = true
-                                    break
+            if healthBar then
+                local main = healthBar:FindFirstChild("Main")
+                if main then
+                    local title = main:FindFirstChild("Title")
+                    if title and title:IsA("TextLabel") then
+                        local mobName = title.ContentText
+                        -- Nếu mob cụ thể được chỉ định, chỉ tìm mob đó
+                        -- Nếu không, tìm bất kỳ mob nào trong danh sách được chọn
+                        local isSelected = false
+                        if specificMob then
+                            isSelected = (mobName == specificMob)
+                        else
+                            if selectedMobs then
+                                for mob, _ in pairs(selectedMobs) do
+                                    if mobName == mob then
+                                        isSelected = true
+                                        break
+                                    end
                                 end
                             end
                         end
-                    end
-                    
-                    if isSelected and not killedNPCs[enemy.Name] then
-                        local enemyPosition = enemy.HumanoidRootPart.Position
-                        local distance = (playerPosition - enemyPosition).Magnitude
-                        if distance < shortestDistance then
-                            shortestDistance = distance
-                            nearestEnemy = enemy
+                        
+                        if isSelected and not killedNPCs[enemy.Name] then
+                            local enemyPosition = enemy.HumanoidRootPart.Position
+                            local distance = (playerPosition - enemyPosition).Magnitude
+                            if distance < shortestDistance then
+                                shortestDistance = distance
+                                nearestEnemy = enemy
+                            end
                         end
                     end
                 end
@@ -165,12 +177,13 @@ local function fireShowPetsRemote()
     remote:FireServer(unpack(args))
 end
 
+-- Sửa hàm getNearestEnemy để thêm kiểm tra nil
 local function getNearestEnemy()
     local nearestEnemy, shortestDistance = nil, math.huge
     local playerPosition = hrp.Position
 
     for _, enemy in ipairs(enemiesFolder:GetChildren()) do
-        if enemy:IsA("Model") and enemy:FindFirstChild("HumanoidRootPart") and not killedNPCs[enemy.Name] then
+        if enemy and enemy:IsA("Model") and enemy:FindFirstChild("HumanoidRootPart") and not killedNPCs[enemy.Name] then
             local distance = (playerPosition - enemy:GetPivot().Position).Magnitude
             if distance < shortestDistance then
                 shortestDistance = distance
@@ -2136,15 +2149,23 @@ task.spawn(function()
     print("Khởi động hoàn tất, đã tắt chế độ khởi động.")
 end)
 
--- Cập nhật hàm teleportToSelectedEnemy để thêm độ trễ khi bắt đầu
+-- Sửa hàm teleportToSelectedEnemy để thêm kiểm tra nil
 local function teleportToSelectedEnemy()
+    -- Kiểm tra hrp, remote và teleportEnabled
+    if not hrp or not remote or not teleportEnabled then
+        print("Không thể bắt đầu farm: thiếu dữ liệu cơ bản")
+        return
+    end
+    
     -- Thêm độ trễ khi bắt đầu farm nếu cần
     if farmDelayEnabled then
-        Fluent:Notify({
-            Title = "Farm sẽ bắt đầu sau",
-            Content = "Đang đợi " .. initialFarmDelay .. " giây trước khi bắt đầu farm...",
-            Duration = initialFarmDelay
-        })
+        if Fluent then
+            Fluent:Notify({
+                Title = "Farm sẽ bắt đầu sau",
+                Content = "Đang đợi " .. initialFarmDelay .. " giây trước khi bắt đầu farm...",
+                Duration = initialFarmDelay
+            })
+        end
         task.wait(initialFarmDelay)
     end
     
@@ -2163,7 +2184,7 @@ local function teleportToSelectedEnemy()
         -- Nếu không có mob nào được chọn, thử farm tất cả mob trong world hiện tại
         if not hasMobs then
             local target = getNearestEnemy()
-            if target and target.Parent then
+            if target and target.Parent and target:FindFirstChild("HumanoidRootPart") then
                 anticheat()
                 moveToTarget(target)
                 task.wait(0.5)
@@ -2190,7 +2211,7 @@ local function teleportToSelectedEnemy()
             -- Lặp qua từng mob được chọn - đảm bảo selectedMobs là table
             for mobName, _ in pairs(selectedMobs or {}) do
                 local target = getNearestSelectedEnemy(mobName)
-                if target and target.Parent then
+                if target and target.Parent and target:FindFirstChild("HumanoidRootPart") then
                     anticheat()
                     moveToTarget(target)
                     task.wait(0.5)
@@ -2223,7 +2244,13 @@ local function teleportToSelectedEnemy()
     end
 end
 
+-- Sửa hàm attackEnemy để thêm kiểm tra nil
 local function attackEnemy()
+    if not remote or not damageEnabled then
+        print("Không thể bắt đầu tấn công: thiếu dữ liệu cơ bản")
+        return
+    end
+    
     while damageEnabled do
         local targetEnemy = getNearestEnemy()
         if targetEnemy then
