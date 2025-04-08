@@ -234,30 +234,68 @@ end
 
 local function teleportToSelectedEnemy()
     while teleportEnabled do
-        local target = getNearestSelectedEnemy()
-        if target and target.Parent then
-            anticheat()
-            moveToTarget(target)
-            task.wait(0.5)
-            fireShowPetsRemote()
-
-            remote:FireServer({
-                {
-                    ["PetPos"] = {},
-                    ["AttackType"] = "All",
-                    ["Event"] = "Attack",
-                    ["Enemy"] = target.Name
-                },
-                "\7"
-            })
-
-            while teleportEnabled and target.Parent and not isEnemyDead(target) do
-                task.wait(0.1)
+        local targetFound = false
+        
+        -- Nếu không có mob nào được chọn, thử farm tất cả mob trong world hiện tại
+        if next(selectedMobs) == nil then
+            local target = getNearestEnemy()
+            if target and target.Parent then
+                anticheat()
+                moveToTarget(target)
+                task.wait(0.5)
+                fireShowPetsRemote()
+                
+                remote:FireServer({
+                    {
+                        ["PetPos"] = {},
+                        ["AttackType"] = "All",
+                        ["Event"] = "Attack",
+                        ["Enemy"] = target.Name
+                    },
+                    "\7"
+                })
+                
+                while teleportEnabled and target.Parent and not isEnemyDead(target) do
+                    task.wait(0.1)
+                end
+                
+                killedNPCs[target.Name] = true
+                targetFound = true
             end
-
-            killedNPCs[target.Name] = true
+        else
+            -- Lặp qua từng mob được chọn
+            for mobName, _ in pairs(selectedMobs) do
+                local target = getNearestSelectedEnemy(mobName)
+                if target and target.Parent then
+                    anticheat()
+                    moveToTarget(target)
+                    task.wait(0.5)
+                    fireShowPetsRemote()
+                    
+                    remote:FireServer({
+                        {
+                            ["PetPos"] = {},
+                            ["AttackType"] = "All",
+                            ["Event"] = "Attack",
+                            ["Enemy"] = target.Name
+                        },
+                        "\7"
+                    })
+                    
+                    while teleportEnabled and target.Parent and not isEnemyDead(target) do
+                        task.wait(0.1)
+                    end
+                    
+                    killedNPCs[target.Name] = true
+                    targetFound = true
+                    break -- Tiếp tục với mob tiếp theo trong vòng lặp tiếp theo
+                end
+            end
+        }
+        
+        if not targetFound then
+            task.wait(0.2) -- Đợi trước khi kiểm tra lại
         end
-        task.wait(0.20)
     end
 end
 
@@ -338,7 +376,44 @@ local mobsByWorld = {
     ["JojoWorld"] = {"Jotaro", "Josuke", "Giorno", "Jolyne", "Johnny"}
 }
 
-local selectedWorld = "SoloWorld" -- Default world
+-- Mapping từ world name đến spawn code
+local worldToSpawnCode = {
+    ["SoloWorld"] = "SoloWorld",
+    ["NarutoWorld"] = "NarutoWorld", 
+    ["OPWorld"] = "OPWorld",
+    ["BleachWorld"] = "BleachWorld",
+    ["BCWorld"] = "BCWorld",
+    ["JojoWorld"] = "JojoWorld"
+}
+
+local selectedWorld = ConfigSystem.CurrentConfig.SelectedWorld or "SoloWorld" -- Default world
+local selectedMobs = {} -- Danh sách các mob được chọn
+
+-- Hàm teleport tới world và cập nhật mob
+local function teleportToWorldAndUpdateMobs(world)
+    -- Lưu lại world được chọn
+    selectedWorld = world
+    ConfigSystem.CurrentConfig.SelectedWorld = world
+    ConfigSystem.SaveConfig()
+    
+    -- Teleport đến world tương ứng
+    local spawnCode = worldToSpawnCode[world]
+    if spawnCode then
+        SetSpawnAndReset(spawnCode)
+    end
+    
+    -- Cập nhật danh sách mob dựa trên world được chọn
+    local mobDropdown = Fluent.Options.WorldMobDropdown
+    if mobDropdown then
+        mobDropdown:SetValues(mobsByWorld[world] or {})
+        
+        -- Reset mob selection khi chuyển world
+        selectedMobs = {}
+        ConfigSystem.CurrentConfig.SelectedMobs = selectedMobs
+        ConfigSystem.SaveConfig()
+        killedNPCs = {} -- Đặt lại danh sách NPC đã tiêu diệt
+    end
+end
 
 -- Dropdown để chọn World/Map
 Tabs.Main:AddDropdown("WorldDropdown", {
@@ -347,45 +422,27 @@ Tabs.Main:AddDropdown("WorldDropdown", {
     Multi = false,
     Default = selectedWorld,
     Callback = function(world)
-        selectedWorld = world
-        ConfigSystem.CurrentConfig.SelectedWorld = world
-        
-        -- Cập nhật danh sách mob dựa trên world được chọn
-        local mobDropdown = Fluent.Options.WorldMobDropdown
-        if mobDropdown then
-            mobDropdown:SetValues(mobsByWorld[world] or {})
-            -- Đặt giá trị mặc định nếu có mob
-            if #mobsByWorld[world] > 0 then
-                selectedMobName = mobsByWorld[world][1]
-                mobDropdown:SetValue(selectedMobName)
-                ConfigSystem.CurrentConfig.SelectedMobName = selectedMobName
-            else
-                selectedMobName = ""
-            end
-        end
-        
-        ConfigSystem.SaveConfig()
-        killedNPCs = {} -- Đặt lại danh sách NPC đã tiêu diệt khi thay đổi world
+        teleportToWorldAndUpdateMobs(world)
     end
 })
 
--- Dropdown để chọn Mob trong world đã chọn
+-- Dropdown để chọn nhiều Mob trong world đã chọn
 Tabs.Main:AddDropdown("WorldMobDropdown", {
     Title = "Select Enemy",
     Values = mobsByWorld[selectedWorld] or {},
-    Multi = false,
-    Default = mobsByWorld[selectedWorld] and mobsByWorld[selectedWorld][1] or "",
-    Callback = function(mob)
-        selectedMobName = mob
-        ConfigSystem.CurrentConfig.SelectedMobName = mob
+    Multi = true, -- Cho phép chọn nhiều
+    Default = ConfigSystem.CurrentConfig.SelectedMobs or {},
+    Callback = function(mobs)
+        selectedMobs = mobs
+        ConfigSystem.CurrentConfig.SelectedMobs = mobs
         ConfigSystem.SaveConfig()
         killedNPCs = {} -- Đặt lại danh sách NPC đã tiêu diệt khi thay đổi mob
-        print("Selected Mob:", selectedMobName) -- Gỡ lỗi
+        print("Selected Mobs:", table.concat(selectedMobs, ", ")) -- Gỡ lỗi
     end
 })
 
 Tabs.Main:AddToggle("FarmSelectedMob", {
-    Title = "Farm Selected Mob",
+    Title = "Farm Selected Mob(s)",
     Default = ConfigSystem.CurrentConfig.FarmSelectedMob or false,
     Callback = function(state)
         teleportEnabled = state
