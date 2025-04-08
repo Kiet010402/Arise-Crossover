@@ -431,9 +431,9 @@ end
 local function getCurrentWorld()
     -- Vị trí tham chiếu cho từng world (có thể thay đổi tọa độ để phù hợp với game)
     local worldPositions = {
-        ["SoloWorld"] = Vector3.new(0, 0, 0),       -- Thay bằng tọa độ thực của SoloWorld
-        ["NarutoWorld"] = Vector3.new(0, 0, 0),     -- Thay bằng tọa độ thực của NarutoWorld
-        ["OPWorld"] = Vector3.new(0, 0, 0),         -- Thay bằng tọa độ thực của OPWorld
+        ["SoloWorld"] = Vector3.new(452.0694580078125, 10.247093200683594, -22.772018432617188),       -- Thay bằng tọa độ thực của SoloWorld
+        ["NarutoWorld"] = Vector3.new(-3372.7119140625, 27.03447151184082, 2252.6171875),     -- Thay bằng tọa độ thực của NarutoWorld
+        ["OPWorld"] = Vector3.new(-2839.558837890625, 35.5246467590332, -1998.7088623046875),         -- Thay bằng tọa độ thực của OPWorld
         ["BleachWorld"] = Vector3.new(0, 0, 0),     -- Thay bằng tọa độ thực của BleachWorld
         ["BCWorld"] = Vector3.new(0, 0, 0),         -- Thay bằng tọa độ thực của BCWorld
         ["JojoWorld"] = Vector3.new(0, 0, 0)        -- Thay bằng tọa độ thực của JojoWorld
