@@ -26,7 +26,12 @@ ConfigSystem.DefaultConfig = {
     MainAutoDestroy = false,
     MainAutoArise = false,
     FarmingMethod = "Tween",
-    DamageMobs = false
+    DamageMobs = false,
+    SelectedShop = "WeaponShop1",
+    SelectedWeapon = "",
+    AutoBuyEnabled = false,
+    AutoScanEnabled = false,
+    ScanDelay = 1
 }
 ConfigSystem.CurrentConfig = {}
 
@@ -322,6 +327,7 @@ local Tabs = {
     tp = Window:AddTab({ Title = "Teleports", Icon = "" }),
     mount = Window:AddTab({ Title = "Mount Location/farm", Icon = "" }),
     dungeon = Window:AddTab({ Title = "Dungeon ", Icon = "" }),
+    Buy = Window:AddTab({ Title = "Buy", Icon = "" }),
     Player = Window:AddTab({ Title = "Player", Icon = "" }),
     Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
 }
@@ -1633,6 +1639,194 @@ end
 -- Thực thi tự động lưu/tải cấu hình
 AutoSaveConfig()
 setupSaveEvents() -- Thêm dòng này
+
+-- Thêm code cho tab Buy sau phần mã của tab mount
+-- Mapping giữa shops và weapons
+local weaponsByShop = {
+    ["WeaponShop1"] = {"BasicSword", "StarterBlade", "StoneDagger"},
+    ["WeaponShop2"] = {"MetalSword", "SharpKatana", "WindBlade"},
+    ["WeaponShop3"] = {"DualKunai", "FireSword", "PoisonDagger"},
+    ["WeaponShop4"] = {"ThunderBlade", "ShadowKnife", "IceSpear"},
+    ["WeaponShop5"] = {"DragonSword", "PhoenixWings", "AbyssBlade"},
+    ["WeaponShop6"] = {"DemonClaws", "AngelicRapier", "CosmicStaff"},
+    ["WeaponShop7"] = {"SlayerScythe", "SlayerScythe2", "VoidSlicer"}
+}
+
+local selectedShop = "WeaponShop1" -- Shop mặc định
+local selectedWeapon = "" -- Weapon mặc định
+local autoBuyEnabled = false -- Trạng thái Auto Buy
+
+-- Cập nhật ConfigSystem để lưu các biến mới
+ConfigSystem.DefaultConfig.SelectedShop = selectedShop
+ConfigSystem.DefaultConfig.SelectedWeapon = selectedWeapon
+ConfigSystem.DefaultConfig.AutoBuyEnabled = autoBuyEnabled
+
+-- Dropdown để chọn Shop
+Tabs.Buy:AddDropdown("ShopDropdown", {
+    Title = "Select Shop",
+    Values = {"WeaponShop1", "WeaponShop2", "WeaponShop3", "WeaponShop4", "WeaponShop5", "WeaponShop6", "WeaponShop7"},
+    Multi = false,
+    Default = ConfigSystem.CurrentConfig.SelectedShop or selectedShop,
+    Callback = function(shop)
+        selectedShop = shop
+        ConfigSystem.CurrentConfig.SelectedShop = shop
+        
+        -- Cập nhật danh sách weapon dựa trên shop được chọn
+        local weaponDropdown = Fluent.Options.WeaponDropdown
+        if weaponDropdown then
+            weaponDropdown:SetValues(weaponsByShop[shop] or {})
+            -- Đặt giá trị mặc định nếu có weapon
+            if #weaponsByShop[shop] > 0 then
+                selectedWeapon = weaponsByShop[shop][1]
+                weaponDropdown:SetValue(selectedWeapon)
+                ConfigSystem.CurrentConfig.SelectedWeapon = selectedWeapon
+            else
+                selectedWeapon = ""
+            end
+        end
+        
+        ConfigSystem.SaveConfig()
+    end
+})
+
+-- Dropdown để chọn Weapon trong shop đã chọn
+Tabs.Buy:AddDropdown("WeaponDropdown", {
+    Title = "Select Weapon",
+    Values = weaponsByShop[selectedShop] or {},
+    Multi = false,
+    Default = ConfigSystem.CurrentConfig.SelectedWeapon or (weaponsByShop[selectedShop] and weaponsByShop[selectedShop][1] or ""),
+    Callback = function(weapon)
+        selectedWeapon = weapon
+        ConfigSystem.CurrentConfig.SelectedWeapon = weapon
+        ConfigSystem.SaveConfig()
+        print("Selected Weapon:", selectedWeapon) -- Gỡ lỗi
+    end
+})
+
+-- Hàm để mua weapon
+local function buyWeapon()
+    if selectedShop and selectedWeapon and selectedWeapon ~= "" then
+        local args = {
+            [1] = {
+                [1] = {
+                    ["Action"] = "Buy",
+                    ["Shop"] = selectedShop,
+                    ["Item"] = selectedWeapon,
+                    ["Event"] = "ItemShopAction"
+                },
+                [2] = "\n"
+            }
+        }
+        
+        game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent"):FireServer(unpack(args))
+        print("Đã mua:", selectedWeapon, "từ cửa hàng:", selectedShop)
+    else
+        print("Vui lòng chọn shop và weapon!")
+    end
+end
+
+-- Toggle để bật/tắt Auto Buy
+Tabs.Buy:AddToggle("AutoBuyToggle", {
+    Title = "Auto Buy Weapon",
+    Default = ConfigSystem.CurrentConfig.AutoBuyEnabled or false,
+    Callback = function(state)
+        autoBuyEnabled = state
+        ConfigSystem.CurrentConfig.AutoBuyEnabled = state
+        ConfigSystem.SaveConfig()
+        
+        if state then
+            task.spawn(function()
+                while autoBuyEnabled do
+                    buyWeapon()
+                    task.wait(1) -- Chờ 1 giây giữa mỗi lần mua
+                end
+            end)
+        end
+    end
+})
+
+-- Nút mua ngay
+Tabs.Buy:AddButton({
+    Title = "Buy Now",
+    Description = "Purchase the selected weapon immediately",
+    Callback = function()
+        buyWeapon()
+    end
+})
+
+-- Thêm chức năng Auto Scan Weapon
+local autoScanEnabled = false
+local scanDelay = 1 -- Độ trễ giữa các lần quét (giây)
+
+-- Cập nhật ConfigSystem để lưu biến mới
+ConfigSystem.DefaultConfig.AutoScanEnabled = autoScanEnabled
+ConfigSystem.DefaultConfig.ScanDelay = scanDelay
+
+-- Slider để điều chỉnh Scan Delay
+Tabs.Buy:AddSlider("ScanDelaySlider", {
+    Title = "Scan Delay",
+    Min = 0.1,
+    Max = 5,
+    Default = ConfigSystem.CurrentConfig.ScanDelay or scanDelay,
+    Description = "Adjust the delay between scans (seconds)",
+    Suffix = "s",
+    Callback = function(value)
+        scanDelay = value
+        ConfigSystem.CurrentConfig.ScanDelay = value
+        ConfigSystem.SaveConfig()
+    end
+})
+
+-- Toggle để bật/tắt Auto Scan
+Tabs.Buy:AddToggle("AutoScanToggle", {
+    Title = "Auto Scan Weapons",
+    Default = ConfigSystem.CurrentConfig.AutoScanEnabled or false,
+    Callback = function(state)
+        autoScanEnabled = state
+        ConfigSystem.CurrentConfig.AutoScanEnabled = state
+        ConfigSystem.SaveConfig()
+        
+        if state then
+            task.spawn(function()
+                while autoScanEnabled do
+                    -- Quét qua các shop và weapon
+                    for shop, weapons in pairs(weaponsByShop) do
+                        for _, weapon in ipairs(weapons) do
+                            -- Gửi remote để kiểm tra weapon
+                            local args = {
+                                [1] = {
+                                    [1] = {
+                                        ["Action"] = "Preview",
+                                        ["Shop"] = shop,
+                                        ["Item"] = weapon,
+                                        ["Event"] = "ItemShopAction"
+                                    },
+                                    [2] = "\n"
+                                }
+                            }
+                            
+                            game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent"):FireServer(unpack(args))
+                            print("Đã quét:", weapon, "từ cửa hàng:", shop)
+                            task.wait(scanDelay) -- Chờ giữa mỗi lần quét
+                            
+                            -- Nếu Auto Scan đã tắt, thoát vòng lặp
+                            if not autoScanEnabled then
+                                break
+                            end
+                        end
+                        
+                        -- Nếu Auto Scan đã tắt, thoát vòng lặp
+                        if not autoScanEnabled then
+                            break
+                        end
+                    end
+                    
+                    task.wait(1) -- Chờ 1 giây sau khi quét hết tất cả
+                end
+            end)
+        end
+    end
+})
 
 
 
