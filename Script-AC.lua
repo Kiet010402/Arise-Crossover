@@ -1624,13 +1624,15 @@ end
 -- Thêm event listener để lưu ngay khi thay đổi giá trị
 local function setupSaveEvents()
     for _, tab in pairs(Tabs) do
-        for _, element in pairs(tab._components) do
-            if element.OnChanged then
-                element.OnChanged:Connect(function()
-                    pcall(function()
-                        SaveManager:Save("AutoSave_" .. playerName)
+        if tab and tab._components then -- Kiểm tra tab và tab._components có tồn tại không
+            for _, element in pairs(tab._components) do
+                if element and element.OnChanged then -- Kiểm tra element và element.OnChanged có tồn tại không
+                    element.OnChanged:Connect(function()
+                        pcall(function()
+                            SaveManager:Save("AutoSave_" .. playerName)
+                        end)
                     end)
-                end)
+                end
             end
         end
     end
