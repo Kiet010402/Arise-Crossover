@@ -105,13 +105,24 @@ local function getNearestSelectedEnemy()
     local nearestEnemy = nil
     local shortestDistance = math.huge
     local playerPosition = hrp.Position
+    
+    -- Gửi yêu cầu server để nhận thông tin về tất cả mob trên map
+    remote:FireServer({
+        {
+            ["Event"] = "ShowPets"
+        },
+        "\t"
+    })
+    
+    -- Đợi một chút để server cập nhật danh sách mob
+    task.wait(0.3)
 
     for _, enemy in ipairs(enemiesFolder:GetChildren()) do
         if enemy:IsA("Model") and enemy:FindFirstChild("HumanoidRootPart") then
             local healthBar = enemy:FindFirstChild("HealthBar")
             if healthBar and healthBar:FindFirstChild("Main") and healthBar.Main:FindFirstChild("Title") then
                 local title = healthBar.Main.Title
-                if title and title:IsA("TextLabel") and title.ContentText == selectedMobName and not killedNPCs[enemy.Name] then
+                if title and title:IsA("TextLabel") and title.ContentText == selectedMobName and not killedNPCs[enemy.Name] and not isEnemyDead(enemy) then
                     local enemyPosition = enemy.HumanoidRootPart.Position
                     local distance = (playerPosition - enemyPosition).Magnitude
                     if distance < shortestDistance then
@@ -122,6 +133,30 @@ local function getNearestSelectedEnemy()
             end
         end
     end
+    
+    -- Nếu không tìm thấy, thử lặp lại với tiêu chí mở rộng (có thể bỏ qua một số kiểm tra)
+    if not nearestEnemy then
+        for _, enemy in ipairs(enemiesFolder:GetChildren()) do
+            if enemy:IsA("Model") and enemy:FindFirstChild("HumanoidRootPart") then
+                local healthBar = enemy:FindFirstChild("HealthBar")
+                if healthBar and healthBar:FindFirstChild("Main") then
+                    local title = healthBar.Main:FindFirstChild("Title")
+                    if title and title:IsA("TextLabel") then
+                        -- Kiểm tra tên có chứa chuỗi con thay vì trùng khớp hoàn toàn
+                        if string.find(title.ContentText, selectedMobName) and not killedNPCs[enemy.Name] and not isEnemyDead(enemy) then
+                            local enemyPosition = enemy.HumanoidRootPart.Position
+                            local distance = (playerPosition - enemyPosition).Magnitude
+                            if distance < shortestDistance then
+                                shortestDistance = distance
+                                nearestEnemy = enemy
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
     return nearestEnemy
 end
 
@@ -251,11 +286,42 @@ local function teleportToSelectedEnemy()
                 "\7"
             })
 
-            while teleportEnabled and target.Parent and not isEnemyDead(target) do
+            -- Đợi một khoảng thời gian ngắn để xem mob có còn hoạt động không
+            local startTime = tick()
+            while teleportEnabled and target.Parent and not isEnemyDead(target) and (tick() - startTime) < 10 do
                 task.wait(0.1)
+                -- Cập nhật vị trí nếu mob di chuyển
+                if target:FindFirstChild("HumanoidRootPart") then
+                    moveToTarget(target)
+                    -- Tấn công lại mỗi 1 giây
+                    if (tick() - startTime) % 1 < 0.1 then
+                        remote:FireServer({
+                            {
+                                ["PetPos"] = {},
+                                ["AttackType"] = "All",
+                                ["Event"] = "Attack",
+                                ["Enemy"] = target.Name
+                            },
+                            "\7"
+                        })
+                    end
+                end
             end
 
+            -- Đánh dấu mob đã bị tiêu diệt
             killedNPCs[target.Name] = true
+        else
+            -- Nếu không tìm thấy mob, thử tìm kiếm lại sau 1 giây
+            task.wait(1)
+            
+            -- Đặt lại danh sách mob đã tiêu diệt sau 30 giây nếu không tìm thấy mob mới
+            local resetTimer = resetTimer or 0
+            resetTimer = resetTimer + 1
+            if resetTimer >= 30 then
+                resetTimer = 0
+                killedNPCs = {}
+                print("Đã đặt lại danh sách mob đã tiêu diệt!")
+            end
         end
         task.wait(0.20)
     end
