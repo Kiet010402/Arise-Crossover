@@ -106,51 +106,22 @@ local function getNearestSelectedEnemy()
     local shortestDistance = math.huge
     local playerPosition = hrp.Position
 
-    -- Lấy tất cả mob trong world
-    local allMobs = {}
     for _, enemy in ipairs(enemiesFolder:GetChildren()) do
         if enemy:IsA("Model") and enemy:FindFirstChild("HumanoidRootPart") then
             local healthBar = enemy:FindFirstChild("HealthBar")
             if healthBar and healthBar:FindFirstChild("Main") and healthBar.Main:FindFirstChild("Title") then
                 local title = healthBar.Main.Title
                 if title and title:IsA("TextLabel") and title.ContentText == selectedMobName and not killedNPCs[enemy.Name] then
-                    table.insert(allMobs, enemy)
-                end
-            end
-        end
-    end
-
-    -- Nếu không tìm thấy mob trong tầm nhìn, thử tìm trong toàn bộ world
-    if #allMobs == 0 then
-        -- Tạo một vòng lặp để tìm mob trong toàn bộ world
-        for _, enemy in ipairs(enemiesFolder:GetChildren()) do
-            if enemy:IsA("Model") and enemy:FindFirstChild("HumanoidRootPart") then
-                local healthBar = enemy:FindFirstChild("HealthBar")
-                if healthBar and healthBar:FindFirstChild("Main") and healthBar.Main:FindFirstChild("Title") then
-                    local title = healthBar.Main.Title
-                    if title and title:IsA("TextLabel") and title.ContentText == selectedMobName and not killedNPCs[enemy.Name] then
-                        local enemyPosition = enemy.HumanoidRootPart.Position
-                        local distance = (playerPosition - enemyPosition).Magnitude
-                        if distance < shortestDistance then
-                            shortestDistance = distance
-                            nearestEnemy = enemy
-                        end
+                    local enemyPosition = enemy.HumanoidRootPart.Position
+                    local distance = (playerPosition - enemyPosition).Magnitude
+                    if distance < shortestDistance then
+                        shortestDistance = distance
+                        nearestEnemy = enemy
                     end
                 end
             end
         end
-    else
-        -- Nếu tìm thấy mob trong tầm nhìn, chọn mob gần nhất
-        for _, enemy in ipairs(allMobs) do
-            local enemyPosition = enemy.HumanoidRootPart.Position
-            local distance = (playerPosition - enemyPosition).Magnitude
-            if distance < shortestDistance then
-                shortestDistance = distance
-                nearestEnemy = enemy
-            end
-        end
     end
-
     return nearestEnemy
 end
 
@@ -361,56 +332,12 @@ local Tabs = {
 local mobsByWorld = {
     ["SoloWorld"] = {"Soondoo", "Gonshee", "Daek", "Longin", "Anders", "Largalgan"},
     ["NarutoWorld"] = {"Snake Man", "Blossom", "Black Crow"},
-    ["OPWorld"] = {"Neptune", "Jollyn", "Namyura", "KayAy", "Zoro"},
-    ["BleachWorld"] = {"Orihime", "Chad", "Ishida", "Rukia", "Toshiro"},
-    ["BCWorld"] = {"Gojo", "Yuta", "Yuji", "Nobara", "Megumi"},
+    ["OPWorld"] = {"Shark Man", "Eminel", "Light Admiral"},
+    ["BleachWorld"] = {"Luryu", "Fyakuya", "Genji"},
+    ["BCWorld"] = {"Sortudo", "Michille", "Wind"},
     ["ChainsawWorld"] = {"Heaven", "Zere", "Ika"},
-    ["JojoWorld"] = {"Jotaro", "Josuke", "Giorno", "Jolyne", "Johnny"}
+    ["JojoWorld"] = {"Diablo", "Gosuke", "Golyne"}
 }
-
--- Thêm tọa độ của từng world
-local worldCoordinates = {
-    ["SoloWorld"] = CFrame.new(576.62, 28.43, 263.71),
-    ["NarutoWorld"] = CFrame.new(-3380.24, 30.26, 2257.26),
-    ["OPWorld"] = CFrame.new(-2851.12, 49.40, -2011.39),
-    ["BleachWorld"] = CFrame.new(2641.80, 45.43, -2645.08),
-    ["BCWorld"] = CFrame.new(198.34, 38.71, 4296.11),
-    ["ChainsawWorld"] = CFrame.new(2640.70, 45.43, -2642.79),
-    ["JojoWorld"] = CFrame.new(4816.32, 29.94, -120.23)
-}
-
--- Hàm teleport đến world
-local function teleportToWorld(worldName)
-    if worldCoordinates[worldName] then
-        -- Tắt auto farm nếu đang bật
-        if teleportEnabled then
-            teleportEnabled = false
-            -- Tìm và cập nhật toggle tương ứng nếu cần
-            local farmToggle = Fluent.Options.FarmSelectedMob
-            if farmToggle then
-                farmToggle:SetValue(false)
-            end
-            
-            local nearestFarmToggle = Fluent.Options.TeleportMobs
-            if nearestFarmToggle then
-                nearestFarmToggle:SetValue(false)
-            end
-        end
-        
-        -- Anticheat bypass
-        anticheat()
-        
-        -- Teleport trực tiếp thay vì tween
-        hrp.CFrame = worldCoordinates[worldName]
-        
-        task.wait(0.5)
-        Fluent:Notify({
-            Title = "Teleported",
-            Content = "Successfully teleported to " .. worldName,
-            Duration = 2
-        })
-    end
-end
 
 local selectedWorld = "SoloWorld" -- Default world
 
@@ -423,9 +350,6 @@ Tabs.Main:AddDropdown("WorldDropdown", {
     Callback = function(world)
         selectedWorld = world
         ConfigSystem.CurrentConfig.SelectedWorld = world
-        
-        -- Teleport đến world mới
-        teleportToWorld(world)
         
         -- Cập nhật danh sách mob dựa trên world được chọn
         local mobDropdown = Fluent.Options.WorldMobDropdown
@@ -578,7 +502,7 @@ end
 end
 
 Tabs.tp:AddButton({
-    Title = "Solo City",
+    Title = "Leveling City",
     Description = "Set spawn & reset",
     Callback = function()
         SetSpawnAndReset("SoloWorld")
@@ -610,7 +534,7 @@ Tabs.tp:AddButton({
 })
 
 Tabs.tp:AddButton({
-    Title = "Lucky island",
+    Title = "Lucky Kingdom",
     Description = "Set spawn & reset",
     Callback = function()
         SetSpawnAndReset("BCWorld")
@@ -2223,30 +2147,22 @@ end
 
 -- Thêm event listener để lưu ngay khi thay đổi giá trị
 local function setupSaveEvents()
-    if not Tabs then return end
-    
-    for tabName, tab in pairs(Tabs) do
-        if tab and tab._components then
-            for _, element in pairs(tab._components) do
-                if element and element.OnChanged then
-                    element.OnChanged:Connect(function()
-                        pcall(function()
-                            if SaveManager then
-                                SaveManager:Save("AutoSave_" .. player.Name)
-                            end
-                        end)
+    for _, tab in pairs(Tabs) do
+        for _, element in pairs(tab._components) do
+            if element.OnChanged then
+                element.OnChanged:Connect(function()
+                    pcall(function()
+                        SaveManager:Save("AutoSave_" .. playerName)
                     end)
-                end
+                end)
             end
         end
     end
 end
 
 -- Thực thi tự động lưu/tải cấu hình
-pcall(function()
-    AutoSaveConfig()
-    setupSaveEvents() -- Thêm dòng này
-end)
+AutoSaveConfig()
+setupSaveEvents() -- Thêm dòng này
 
 
 
