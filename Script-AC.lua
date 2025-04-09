@@ -9,17 +9,18 @@ local hrp = character:WaitForChild("HumanoidRootPart")
 local enemiesFolder = workspace:WaitForChild("__Main"):WaitForChild("__Enemies"):WaitForChild("Client")
 local remote = ReplicatedStorage:WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent")
 
--- Tối ưu phần tải thư viện Fluent
-local Fluent = nil
-local SaveManager = nil
-local InterfaceManager = nil
+local teleportEnabled = false
+local killedNPCs = {}
+local dungeonkill = {}
+local selectedMobName = ""
+local movementMethod = "Tween" -- Phương thức di chuyển mặc định
+local farmingStyle = "Default" -- Phong cách farm mặc định
 
--- Khởi tạo biến cấu hình
+-- Hệ thống lưu trữ mới
 local ConfigSystem = {}
 ConfigSystem.FileName = "AriseConfigV2_" .. player.Name .. ".json"
 ConfigSystem.DefaultConfig = {
     SelectedMobName = "",
-    SelectedWorld = "SoloWorld",
     FarmSelectedMob = false,
     AutoFarmNearestNPCs = false,
     MainAutoDestroy = false,
@@ -28,6 +29,18 @@ ConfigSystem.DefaultConfig = {
     DamageMobs = false
 }
 ConfigSystem.CurrentConfig = {}
+
+-- Hàm để lưu cấu hình
+ConfigSystem.SaveConfig = function()
+    local success, err = pcall(function()
+        writefile(ConfigSystem.FileName, game:GetService("HttpService"):JSONEncode(ConfigSystem.CurrentConfig))
+    end)
+    if success then
+        print("Đã lưu cấu hình thành công!")
+    else
+        warn("Lưu cấu hình thất bại:", err)
+    end
+end
 
 -- Hàm để tải cấu hình
 ConfigSystem.LoadConfig = function()
@@ -49,299 +62,13 @@ ConfigSystem.LoadConfig = function()
     end
 end
 
--- Hàm để lưu cấu hình
-ConfigSystem.SaveConfig = function()
-    local success, err = pcall(function()
-        writefile(ConfigSystem.FileName, game:GetService("HttpService"):JSONEncode(ConfigSystem.CurrentConfig))
-    end)
-    if success then
-        print("Đã lưu cấu hình thành công!")
-    else
-        warn("Lưu cấu hình thất bại:", err)
-    end
-end
-
 -- Tải cấu hình khi khởi động
 ConfigSystem.LoadConfig()
 
--- Tạo mapping giữa các map và danh sách mob tương ứng
-local mobsByWorld = {
-    ["SoloWorld"] = {"Soondoo", "Gonshee", "Daek", "Longin", "Anders", "Largalgan"},
-    ["NarutoWorld"] = {"Snake Man", "Blossom", "Black Crow"},
-    ["OPWorld"] = {"Shark Man", "Eminel", "Light Admiral"},
-    ["BleachWorld"] = {"Luryu", "Fyakuya", "Genji"},
-    ["BCWorld"] = {"Sortudo", "Michille", "Wind"},
-    ["ChainsawWorld"] = {"Heaven", "Zere", "Ika"},
-    ["JojoWorld"] = {"Diablo", "Gosuke", "Golyne"}
-}
-
--- Lazy loading để cải thiện hiệu suất
-local function initializeUI()
-    local success, err = pcall(function()
-        -- Tải Fluent từ cache nếu có thể
-        local fluentScript = nil
-        if isfile("fluent_cache.lua") then
-            fluentScript = readfile("fluent_cache.lua")
-        else
-            fluentScript = game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua")
-            writefile("fluent_cache.lua", fluentScript)
-        end
-        
-        Fluent = loadstring(fluentScript)()
-        SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
-        InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
-    end)
-
-    if not success then
-        warn("Lỗi khi tải thư viện Fluent: " .. tostring(err))
-        -- Thử tải từ URL dự phòng
-        pcall(function()
-            Fluent = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Fluent.lua"))()
-            SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
-            InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
-        end)
-    end
-
-    if not Fluent then
-        error("Không thể tải thư viện Fluent. Vui lòng kiểm tra kết nối internet hoặc executor.")
-        return
-    end
-
-    local Window = Fluent:CreateWindow({
-        Title = "Kaihon Hub | Arise Crossover",
-        SubTitle = "",
-        TabWidth = 140,
-        Size = UDim2.fromOffset(450, 350),
-        Acrylic = false,
-        Theme = "Darker",
-        MinimizeKey = Enum.KeyCode.LeftControl
-    })
-
-    local Tabs = {
-        Discord = Window:AddTab({ Title = "INFO", Icon = ""}),
-        Main = Window:AddTab({ Title = "Main", Icon = "" }),
-        tp = Window:AddTab({ Title = "Teleports", Icon = "" }),
-        mount = Window:AddTab({ Title = "Mount Location/farm", Icon = "" }),
-        dungeon = Window:AddTab({ Title = "Dungeon ", Icon = "" }),
-        pets = Window:AddTab({ Title = "Pets ", Icon = "" }),
-        Player = Window:AddTab({ Title = "Player", Icon = "" }),
-        misc = Window:AddTab({ Title = "misc", Icon = "" }),
-        Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
-    }
-
-    -- Biến toàn cục để theo dõi trạng thái
-    _G.teleportEnabled = false
-    _G.damageEnabled = false
-    _G.movementMethod = ConfigSystem.CurrentConfig.FarmingMethod or "Tween"
-    _G.selectedMobName = ConfigSystem.CurrentConfig.SelectedMobName or ""
-    _G.selectedWorld = ConfigSystem.CurrentConfig.SelectedWorld or "SoloWorld"
-    
-    -- Dropdown để chọn World/Map
-    Tabs.Main:AddDropdown("WorldDropdown", {
-        Title = "Select World",
-        Values = {"SoloWorld", "NarutoWorld", "OPWorld", "BleachWorld", "BCWorld", "ChainsawWorld", "JojoWorld"},
-        Multi = false,
-        Default = _G.selectedWorld,
-        Callback = function(world)
-            _G.selectedWorld = world
-            ConfigSystem.CurrentConfig.SelectedWorld = world
-            
-            -- Cập nhật danh sách mob dựa trên world được chọn
-            local mobDropdown = Fluent.Options.WorldMobDropdown
-            if mobDropdown then
-                mobDropdown:SetValues(mobsByWorld[world] or {})
-                -- Đặt giá trị mặc định nếu có mob
-                if #mobsByWorld[world] > 0 then
-                    _G.selectedMobName = mobsByWorld[world][1]
-                    mobDropdown:SetValue(_G.selectedMobName)
-                    ConfigSystem.CurrentConfig.SelectedMobName = _G.selectedMobName
-                else
-                    _G.selectedMobName = ""
-                end
-            end
-            
-            ConfigSystem.SaveConfig()
-            killedNPCs = {} -- Đặt lại danh sách NPC đã tiêu diệt khi thay đổi world
-        end
-    })
-
-    -- Dropdown để chọn Mob trong world đã chọn
-    Tabs.Main:AddDropdown("WorldMobDropdown", {
-        Title = "Select Enemy",
-        Values = mobsByWorld[_G.selectedWorld] or {},
-        Multi = false,
-        Default = mobsByWorld[_G.selectedWorld] and mobsByWorld[_G.selectedWorld][1] or "",
-        Callback = function(mob)
-            _G.selectedMobName = mob
-            ConfigSystem.CurrentConfig.SelectedMobName = mob
-            ConfigSystem.SaveConfig()
-            killedNPCs = {} -- Đặt lại danh sách NPC đã tiêu diệt khi thay đổi mob
-        end
-    })
-
-    -- Tối ưu các toggle để giảm lag
-    Tabs.Main:AddToggle("FarmSelectedMob", {
-        Title = "Farm Selected Mob",
-        Default = ConfigSystem.CurrentConfig.FarmSelectedMob or false,
-        Callback = function(state)
-            _G.teleportEnabled = state
-            _G.damageEnabled = state 
-            ConfigSystem.CurrentConfig.FarmSelectedMob = state
-            ConfigSystem.SaveConfig()
-            killedNPCs = {} 
-            if state then
-                task.spawn(teleportToSelectedEnemy)
-            end
-        end
-    })
-
-    -- Tiếp tục với phần còn lại của UI...
-    -- (code còn lại giữ nguyên)
-
-    -- Tối ưu SaveManager và InterfaceManager
-    local playerName = game:GetService("Players").LocalPlayer.Name
-    InterfaceManager:SetFolder("KaihonScriptHub")
-    SaveManager:SetFolder("KaihonScriptHub/AriseCrossover/" .. playerName)
-
-    -- Thêm thông tin vào tab Settings
-    Tabs.Settings:AddParagraph({
-        Title = "Cấu hình tự động",
-        Content = "Cấu hình của bạn đang được tự động lưu theo tên nhân vật: " .. playerName
-    })
-
-    Window:SelectTab(1)
-
-    Fluent:Notify({
-        Title = "Kaihon Hub",
-        Content = "Script đã tải xong!",
-        Duration = 3
-    })
-
-    -- Lưu cấu hình theo thời gian
-    task.spawn(function()
-        while true do
-            task.wait(30) -- Lưu mỗi 30 giây thay vì 5 giây
-            pcall(function()
-                ConfigSystem.SaveConfig()
-            end)
-        end
-    end)
-
-    return Tabs, Window
-end
-
--- Tối ưu vòng lặp
-local function optimizedLoop(func, delay)
-    return function()
-        local lastTime = tick()
-        while true do
-            local currentTime = tick()
-            local elapsed = currentTime - lastTime
-            
-            if elapsed >= delay then
-                func()
-                lastTime = currentTime
-            end
-            
-            task.wait(math.max(0.1, delay/2)) -- Giảm số lần kiểm tra
-        end
-    end
-end
-
--- Tối ưu farm function
-local function teleportToSelectedEnemy()
-    while _G.teleportEnabled do
-        local target = getNearestSelectedEnemy()
-        if target and target.Parent then
-            anticheat()
-            moveToTarget(target)
-            task.wait(0.8) -- Tăng thời gian chờ
-            fireShowPetsRemote()
-
-            remote:FireServer({
-                {
-                    ["PetPos"] = {},
-                    ["AttackType"] = "All",
-                    ["Event"] = "Attack",
-                    ["Enemy"] = target.Name
-                },
-                "\7"
-            })
-
-            -- Đợi khi mob chết hoặc biến mất
-            local waitStart = tick()
-            while _G.teleportEnabled and target.Parent and not isEnemyDead(target) do
-                -- Thoát nếu đợi quá lâu (10 giây)
-                if tick() - waitStart > 10 then break end
-                task.wait(0.2) -- Tăng thời gian chờ
-            end
-
-            killedNPCs[target.Name] = true
-        end
-        task.wait(0.5) -- Tăng thời gian chờ
-    end
-end
-
--- Khởi tạo UI
-local initComplete = false
-task.spawn(function()
-    -- Đợi game tải xong
-    if not game:IsLoaded() then
-        game.Loaded:Wait()
-    end
-    
-    -- Đợi thêm 1 giây để đảm bảo mọi thứ đã sẵn sàng
-    task.wait(1)
-    
-    -- Khởi tạo UI
-    initComplete = true
-    initializeUI()
-end)
-
--- Load những phần cần thiết trước
-anticheat() -- Kích hoạt anti-cheat ngay
-
--- Hiển thị thông báo cho người dùng
-local loadingGui = Instance.new("ScreenGui")
-local loadingFrame = Instance.new("Frame")
-local loadingText = Instance.new("TextLabel")
-
--- Gán cha cho GUI tùy thuộc vào executor
-if syn and syn.protect_gui then
-    syn.protect_gui(loadingGui)
-    loadingGui.Parent = game:GetService("CoreGui")
-elseif gethui then
-    loadingGui.Parent = gethui()
-else
-    loadingGui.Parent = game:GetService("CoreGui")
-end
-
-loadingGui.Name = "KaihonLoading"
-loadingGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-
-loadingFrame.Name = "LoadingFrame"
-loadingFrame.Parent = loadingGui
-loadingFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-loadingFrame.BorderSizePixel = 0
-loadingFrame.Position = UDim2.new(0.5, -125, 0.5, -25)
-loadingFrame.Size = UDim2.new(0, 250, 0, 50)
-
-loadingText.Name = "LoadingText"
-loadingText.Parent = loadingFrame
-loadingText.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-loadingText.BorderSizePixel = 0
-loadingText.Size = UDim2.new(1, 0, 1, 0)
-loadingText.Font = Enum.Font.GothamSemibold
-loadingText.Text = "Đang tải Kaihon Hub..."
-loadingText.TextColor3 = Color3.fromRGB(255, 255, 255)
-loadingText.TextSize = 18.000
-
--- Xóa GUI khi đã tải xong
-task.spawn(function()
-    while not initComplete do
-        task.wait(0.1)
-    end
-    loadingGui:Destroy()
+-- Tự động phát hiện HumanoidRootPart mới khi người chơi hồi sinh
+player.CharacterAdded:Connect(function(newCharacter)
+    character = newCharacter
+    hrp = newCharacter:WaitForChild("HumanoidRootPart")
 end)
 
 local function anticheat()
@@ -553,6 +280,351 @@ local function attackEnemy()
     end
 end
 
+-- Farm Method Selection Dropdown
+local Fluent
+local SaveManager
+local InterfaceManager
+
+-- Tối ưu cách tải thư viện Fluent và các add-on
+local function loadLibraries()
+    local success, result = pcall(function()
+        Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+        SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
+        InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
+        return true
+    end)
+
+    if not success then
+        -- Thử tải từ URL dự phòng nếu URL chính thất bại
+        pcall(function()
+            Fluent = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Fluent.lua"))()
+            SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
+            InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
+        end)
+    end
+
+    return Fluent ~= nil
+end
+
+-- Tải thư viện trước khi tiếp tục
+if not loadLibraries() then
+    error("Không thể tải thư viện Fluent. Vui lòng kiểm tra kết nối internet hoặc executor.")
+    return
+end
+
+-- Tối ưu việc khởi tạo window
+local Window = Fluent:CreateWindow({
+    Title = "Kaihon Hub | Arise Crossover",
+    SubTitle = "",
+    TabWidth = 140,
+    Size = UDim2.fromOffset(450, 350),
+    Acrylic = false, -- Tắt hiệu ứng Acrylic để giảm tải
+    Theme = "Darker",
+    MinimizeKey = Enum.KeyCode.LeftControl
+})
+
+local Tabs = {
+    Discord = Window:AddTab({ Title = "INFO", Icon = ""}),
+    Main = Window:AddTab({ Title = "Main", Icon = "" }),
+    tp = Window:AddTab({ Title = "Teleports", Icon = "" }),
+    mount = Window:AddTab({ Title = "Mount Location/farm", Icon = "" }),
+    dungeon = Window:AddTab({ Title = "Dungeon ", Icon = "" }),
+    pets = Window:AddTab({ Title = "Pets ", Icon = "" }),
+    Player = Window:AddTab({ Title = "Player", Icon = "" }),
+    misc = Window:AddTab({ Title = "misc", Icon = "" }),
+    Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
+}
+
+-- Tạo mapping giữa các map và danh sách mob tương ứng
+local mobsByWorld = {
+    ["SoloWorld"] = {"Soondoo", "Gonshee", "Daek", "Longin", "Anders", "Largalgan"},
+    ["NarutoWorld"] = {"Snake Man", "Blossom", "Black Crow"},
+    ["OPWorld"] = {"Shark Man", "Eminel", "Light Admiral"},
+    ["BleachWorld"] = {"Luryu", "Fyakuya", "Genji"},
+    ["BCWorld"] = {"Sortudo", "Michille", "Wind"},
+    ["ChainsawWorld"] = {"Heaven", "Zere", "Ika"},
+    ["JojoWorld"] = {"Diablo", "Gosuke", "Golyne"}
+}
+
+local selectedWorld = "SoloWorld" -- Default world
+
+-- Dropdown để chọn World/Map
+Tabs.Main:AddDropdown("WorldDropdown", {
+    Title = "Select World",
+    Values = {"SoloWorld", "NarutoWorld", "OPWorld", "BleachWorld", "BCWorld", "ChainsawWorld", "JojoWorld"},
+    Multi = false,
+    Default = selectedWorld,
+    Callback = function(world)
+        selectedWorld = world
+        ConfigSystem.CurrentConfig.SelectedWorld = world
+        
+        -- Cập nhật danh sách mob dựa trên world được chọn
+        local mobDropdown = Fluent.Options.WorldMobDropdown
+        if mobDropdown then
+            mobDropdown:SetValues(mobsByWorld[world] or {})
+            -- Đặt giá trị mặc định nếu có mob
+            if #mobsByWorld[world] > 0 then
+                selectedMobName = mobsByWorld[world][1]
+                mobDropdown:SetValue(selectedMobName)
+                ConfigSystem.CurrentConfig.SelectedMobName = selectedMobName
+            else
+                selectedMobName = ""
+            end
+        end
+        
+        ConfigSystem.SaveConfig()
+        killedNPCs = {} -- Đặt lại danh sách NPC đã tiêu diệt khi thay đổi world
+    end
+})
+
+-- Dropdown để chọn Mob trong world đã chọn
+Tabs.Main:AddDropdown("WorldMobDropdown", {
+    Title = "Select Enemy",
+    Values = mobsByWorld[selectedWorld] or {},
+    Multi = false,
+    Default = mobsByWorld[selectedWorld] and mobsByWorld[selectedWorld][1] or "",
+    Callback = function(mob)
+        selectedMobName = mob
+        ConfigSystem.CurrentConfig.SelectedMobName = mob
+        ConfigSystem.SaveConfig()
+        killedNPCs = {} -- Đặt lại danh sách NPC đã tiêu diệt khi thay đổi mob
+        print("Selected Mob:", selectedMobName) -- Gỡ lỗi
+    end
+})
+
+Tabs.Main:AddToggle("FarmSelectedMob", {
+    Title = "Farm Selected Mob",
+    Default = ConfigSystem.CurrentConfig.FarmSelectedMob or false,
+    Callback = function(state)
+        teleportEnabled = state
+        damageEnabled = state -- Đảm bảo tính năng tấn công mobs được kích hoạt
+        ConfigSystem.CurrentConfig.FarmSelectedMob = state
+        ConfigSystem.SaveConfig()
+        killedNPCs = {} -- Đặt lại danh sách NPC đã tiêu diệt khi bắt đầu farm
+        if state then
+            task.spawn(teleportToSelectedEnemy)
+        end
+    end
+})
+
+Tabs.Main:AddToggle("TeleportMobs", {
+    Title = "Auto farm (nearest NPCs)",
+    Default = ConfigSystem.CurrentConfig.AutoFarmNearestNPCs or false,
+    Callback = function(state)
+        teleportEnabled = state
+        ConfigSystem.CurrentConfig.AutoFarmNearestNPCs = state
+        ConfigSystem.SaveConfig()
+        if state then
+            task.spawn(teleportAndTrackDeath)
+        end
+    end
+})
+
+local Dropdown = Tabs.Main:AddDropdown("MovementMethod", {
+    Title = "Farming Method",
+    Values = {"Tween", "Teleport"},
+    Multi = false,
+    Default = ConfigSystem.CurrentConfig.FarmingMethod == "Teleport" and 2 or 1,
+    Callback = function(option)
+        movementMethod = option
+        ConfigSystem.CurrentConfig.FarmingMethod = option
+        ConfigSystem.SaveConfig()
+    end
+})
+
+Tabs.Main:AddToggle("DamageMobs", {
+    Title = "Damage Mobs ENABLE THIS",
+    Default = ConfigSystem.CurrentConfig.DamageMobs or false,
+    Callback = function(state)
+        damageEnabled = state
+        ConfigSystem.CurrentConfig.DamageMobs = state
+        ConfigSystem.SaveConfig()
+        if state then
+            task.spawn(attackEnemy)
+        end
+    end
+})
+
+
+
+Tabs.dungeon:AddToggle("TeleportMobs", { 
+    Title = "Auto farm Dungeon", 
+    Default = false, 
+    Flag = "AutoFarmDungeon", -- Thêm Flag để lưu cấu hình
+    Callback = function(state) 
+        teleportEnabled = state 
+        if state then 
+            task.spawn(teleportDungeon) 
+        end 
+    end 
+})
+
+Tabs.Main:AddToggle("GamepassShadowFarm", {
+    Title = "Gamepass Shadow farm",
+    Default = false,
+    Callback = function(state)
+        local attackatri = game:GetService("Players").LocalPlayer.Settings
+        local atri = attackatri:GetAttribute("AutoAttack")
+        
+        if state then
+            -- Bật tính năng
+            if atri == false then
+                attackatri:SetAttribute("AutoAttack", true)
+            end
+            print("Shadow farm đã bật")
+        else
+            -- Tắt tính năng
+            attackatri:SetAttribute("AutoAttack", false)
+            print("Shadow farm đã tắt")
+        end
+    end
+})
+
+local function SetSpawnAndReset(spawnName)
+    local args = {
+        [1] = {
+            [1] = {
+                ["Event"] = "ChangeSpawn",
+                ["Spawn"] = spawnName
+            },
+            [2] = "\n"
+        }
+    }
+
+    local remote = game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent")
+    remote:FireServer(unpack(args))
+
+    -- Đợi một chút trước khi hồi sinh (tùy chọn, để đảm bảo điểm hồi sinh được thiết lập)
+    task.wait(0.5)
+
+    -- Hồi sinh nhân vật
+    local player = game.Players.LocalPlayer
+if player.Character and player.Character.Parent then
+    local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        humanoid.Health = 0 -- Tạo ra cái chết tự nhiên mà không xóa nhân vật đột ngột
+    end
+end
+
+end
+
+Tabs.tp:AddButton({
+    Title = "Leveling City",
+    Description = "Set spawn & reset",
+    Callback = function()
+        SetSpawnAndReset("SoloWorld")
+    end
+})
+
+Tabs.tp:AddButton({
+    Title = "Grass Village",
+    Description = "Set spawn & reset",
+    Callback = function()
+        SetSpawnAndReset("NarutoWorld")
+    end
+})
+
+Tabs.tp:AddButton({
+    Title = "Brum Island",
+    Description = "Set spawn & reset",
+    Callback = function()
+        SetSpawnAndReset("OPWorld") -- Thay đổi thành tên điểm hồi sinh đúng
+    end
+})
+
+Tabs.tp:AddButton({
+    Title = "Faceheal Town",
+    Description = "Set spawn & reset",
+    Callback = function()
+        SetSpawnAndReset("BleachWorld")
+    end
+})
+
+Tabs.tp:AddButton({
+    Title = "Lucky Kingdom",
+    Description = "Set spawn & reset",
+    Callback = function()
+        SetSpawnAndReset("BCWorld")
+    end
+})
+
+Tabs.tp:AddButton({
+    Title = "Nipon City",
+    Description = "Set spawn & reset",
+    Callback = function()
+        SetSpawnAndReset("ChainsawWorld")
+    end
+})
+
+Tabs.tp:AddButton({
+    Title = "Mori Town",
+    Description = "Set spawn & reset",
+    Callback = function()
+        SetSpawnAndReset("JojoWorld")
+    end
+})
+
+local TweenService = game:GetService("TweenService")
+
+
+
+
+
+-- Lấy Player và HumanoidRootPart
+local TweenService = game:GetService("TweenService")
+local player = game.Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local hrp = character:WaitForChild("HumanoidRootPart")
+
+-- Cập nhật HRP khi nhân vật hồi sinh
+player.CharacterAdded:Connect(function(newCharacter)
+    character = newCharacter
+    hrp = character:WaitForChild("HumanoidRootPart") -- Lấy HRP mới sau khi hồi sinh
+end)
+
+-- Hàm di chuyển (Luôn sử dụng HRP mới nhất)
+local function teleportWithTween(targetCFrame)
+    if hrp then
+        local tweenInfo = TweenInfo.new(
+            2, -- Thời gian (giây)
+            Enum.EasingStyle.Sine,
+            Enum.EasingDirection.Out,
+            0, -- Không lặp lại
+            false, -- Không đảo ngược
+            0 -- Không độ trễ
+        )
+
+        local tweenGoal = {CFrame = targetCFrame}
+        local tween = TweenService:Create(hrp, tweenInfo, tweenGoal)
+        tween:Play()
+    end
+end
+
+
+-- Locations List
+local locations = {
+    {Name = "Location 1", CFrame = CFrame.new(-6161.25781, 140.639832, 5512.9668, -0.41691944, -8.07482721e-08, 0.908943415, -2.94452178e-07, 1, -4.62235228e-08, -0.908943415, -2.86911842e-07, -0.41691944)},
+    {Name = "Location 2", CFrame = CFrame.new(-5868.44141, 132.70488, 362.519379, 0.836233854, -7.47273816e-08, -0.548372984, 2.59595481e-07, 1, 2.59595481e-07, 0.548372984, -3.59437678e-07, 0.836233854)},
+    {Name = "Location 3", CFrame = CFrame.new(-5430.81006, 107.441559, -5502.25244, 0.8239398, -3.60997859e-07, -0.566677332, 2.59595453e-07, 1, -2.59595396e-07, 0.566677332, 6.67841249e-08, 0.8239398)},
+    {Name = "Location 4", CFrame = CFrame.new(-702.243225, 133.344467, -3538.11646, 0.978662074, 0.000114096198, -0.205476329, -0.000112703143, 1, 1.84834444e-05, 0.205476329, 5.06878177e-06, 0.978662074)},
+    {Name = "Location 5", CFrame = CFrame.new(450.001709, 117.564827, 3435.4292, -0.999887109, -1.20863996e-12, 0.0150266131, -1.12492459e-12, 1, 5.57959278e-12, -0.0150266131, 5.56205906e-12, -0.999887109)},
+    {Name = "Location 6", CFrame = CFrame.new(3230.96826, 135.41008, 36.1600113, -0.534268856, -4.75206689e-05, 0.845314622, -7.48304665e-05, 1, 8.92103617e-06, -0.845314622, -5.84890549e-05, -0.534268856)},
+    {Name = "Location 7", CFrame = CFrame.new(4325.36523, 118.995422, -4819.78857, -0.257801384, 3.98855832e-07, -0.966197908, -5.63039578e-07, 1, 5.63040146e-07, 0.966197908, 6.89160231e-07, -0.257801384)}
+    
+    
+}
+
+-- Add buttons for each location
+for _, loc in ipairs(locations) do
+    Tabs.mount:AddButton({
+        Title = loc.Name,
+        Callback = function()
+            teleportWithTween(loc.CFrame)
+        end
+    })
+end
+
+
 local autoDestroy = false
 local autoArise = false
 
@@ -719,28 +791,23 @@ end
 
 -- Function to teleport directly to an object and bypass anti-cheat
 local function teleportToObject(object)
-    if object and object:IsA("Part") then
-        print("[DEBUG] Đang dịch chuyển đến:", object.Name)
-
-        -- Vượt qua anti-cheat
-        local f = player.Character and player.Character:FindFirstChild("CharacterScripts") and player.Character.CharacterScripts:FindFirstChild("FlyingFixer")
-        if f then f:Destroy() else print("blablabla bleble") end
-
-        local cha = player.Character and player.Character:FindFirstChild("CharacterScripts") and player.Character.CharacterScripts:FindFirstChild("CharacterUpdater")
-        if cha then cha:Destroy() print("discord") else print("Cid") end
-
-        -- Dịch chuyển trực tiếp
-        hrp.CFrame = object.CFrame
-        print("[DEBUG] Đã hoàn thành dịch chuyển đến:", object.Name)
-
-        task.wait(2) -- Độ trễ nhỏ sau khi dịch chuyển
-        createDungeon() -- Kích hoạt remote tạo dungeon
-
-        task.wait(1) -- Độ trễ ngắn trước khi bắt đầu dungeon
-        startDungeon() -- Kích hoạt remote bắt đầu dungeon
-    else
-        print("[LỖI] Mục tiêu dịch chuyển không hợp lệ!")
+    if not object or not object:IsA("Part") or not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then 
+        return 
     end
+
+    -- Vượt qua anti-cheat
+    local f = player.Character:FindFirstChild("CharacterScripts") and player.Character.CharacterScripts:FindFirstChild("FlyingFixer")
+    if f then f:Destroy() end
+
+    local cha = player.Character:FindFirstChild("CharacterScripts") and player.Character.CharacterScripts:FindFirstChild("CharacterUpdater")
+    if cha then cha:Destroy() end
+
+    -- Dịch chuyển trực tiếp
+    hrp.CFrame = object.CFrame
+    
+    -- Dùng task.delay để giảm tải
+    task.delay(2, createDungeon)
+    task.delay(3, startDungeon)
 end
 
 -- Function to continuously teleport to objects when enabled
@@ -1755,12 +1822,10 @@ local function triggerPetVisibility()
 end
 
 local function startAutoFarm()
-    while autoFarmActive do
+    if autoFarmActive then
         local targetEnemy = findClosestTarget()
         
-        while autoFarmActive and targetEnemy do
-            if not targetEnemy.Parent then break end
-
+        if targetEnemy and targetEnemy.Parent then
             local targetHRP = targetEnemy:FindFirstChild("HumanoidRootPart")
             local playerHRP = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
 
@@ -1768,42 +1833,42 @@ local function startAutoFarm()
                 -- Move to target enemy
                 playerHRP.CFrame = targetHRP.CFrame * CFrame.new(0, 0, 6)
 
-                task.wait(0.5)
-                triggerPetVisibility()
+                task.delay(0.5, function()
+                    if not autoFarmActive then return end
+                    triggerPetVisibility()
 
-                networkEvent:FireServer({
-                    {
-                        ["PetPos"] = {},
-                        ["AttackType"] = "All",
-                        ["Event"] = "Attack",
-                        ["Enemy"] = targetEnemy.Name
-                    },
-                    "\7"
-                })
+                    networkEvent:FireServer({
+                        {
+                            ["PetPos"] = {},
+                            ["AttackType"] = "All",
+                            ["Event"] = "Attack",
+                            ["Enemy"] = targetEnemy.Name
+                        },
+                        "\7"
+                    })
+                end)
 
-                -- Wait until enemy is defeated or a higher-priority one appears
-                while autoFarmActive and targetEnemy.Parent do
+                -- Sử dụng connection để theo dõi trạng thái thay vì vòng lặp liên tục
+                local checkConnection
+                checkConnection = game:GetService("RunService").Heartbeat:Connect(function()
+                    if not autoFarmActive or not targetEnemy.Parent then
+                        checkConnection:Disconnect()
+                        task.delay(0.2, startAutoFarm)
+                        return
+                    end
+                    
                     if isTargetDefeated(targetEnemy) then
-                        defeatedEnemies[targetEnemy.Name] = true -- Mark it as dead immediately
-                        break
+                        defeatedEnemies[targetEnemy.Name] = true
+                        checkConnection:Disconnect()
+                        task.delay(0.2, startAutoFarm)
                     end
-                    
-                    task.wait(0.1)
-                    
-                    -- Switch if a higher-priority target appears
-                    local newTarget = findClosestTarget()
-                    if newTarget and newTarget:GetAttribute("ID") == "JJ2" and newTarget ~= targetEnemy then
-                        break
-                    elseif newTarget and newTarget:GetAttribute("ID") == "JJ3" and targetEnemy:GetAttribute("ID") == "JJ4" then
-                        break
-                    end
-                end
+                end)
+            else
+                task.delay(0.2, startAutoFarm)
             end
-
-            targetEnemy = findClosestTarget() -- Move to next enemy
+        else
+            task.delay(0.5, startAutoFarm)
         end
-
-        task.wait(0.20)
     end
 end
 
@@ -2099,6 +2164,50 @@ end
 -- Thực thi tự động lưu/tải cấu hình
 AutoSaveConfig()
 setupSaveEvents() -- Thêm dòng này
+
+-- Cải thiện cách lưu cấu hình
+local function optimizedSaveConfig()
+    local configName = "AutoSave_" .. playerName
+    local lastSaveTime = 0
+    
+    -- Gắn sự kiện để lưu khi có thay đổi, nhưng hạn chế tần suất lưu
+    local function setupOptimizedSaveEvents()
+        for _, tab in pairs(Tabs) do
+            for _, element in pairs(tab._components) do
+                if element.OnChanged then
+                    element.OnChanged:Connect(function()
+                        local currentTime = tick()
+                        if currentTime - lastSaveTime > 2 then -- Lưu tối đa mỗi 2 giây
+                            lastSaveTime = currentTime
+                            pcall(function()
+                                SaveManager:Save(configName)
+                            end)
+                        end
+                    end)
+                end
+            end
+        end
+    end
+    
+    -- Tự động lưu cấu hình hiện tại theo thời gian
+    task.spawn(function()
+        while task.wait(60) do -- Lưu mỗi 60 giây thay vì 5 giây
+            pcall(function()
+                SaveManager:Save(configName)
+            end)
+        end
+    end)
+    
+    -- Tải cấu hình đã lưu khi khởi động
+    pcall(function()
+        SaveManager:Load(configName)
+    end)
+    
+    task.delay(1, setupOptimizedSaveEvents) -- Đợi UI được khởi tạo hoàn chỉnh
+end
+
+-- Sử dụng hàm lưu cấu hình đã tối ưu
+optimizedSaveConfig()
 
 
 
