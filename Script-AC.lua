@@ -1,3 +1,6 @@
+-- Orion UI Version - Tối ưu hóa hiệu suất
+local OrionLib = loadstring(game:HttpGet(('https://raw.githubusercontent.com/shlexware/Orion/main/source')))()
+
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
@@ -10,17 +13,19 @@ local enemiesFolder = workspace:WaitForChild("__Main"):WaitForChild("__Enemies")
 local remote = ReplicatedStorage:WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent")
 
 local teleportEnabled = false
+local damageEnabled = false
 local killedNPCs = {}
 local dungeonkill = {}
 local selectedMobName = ""
 local movementMethod = "Tween" -- Phương thức di chuyển mặc định
 local farmingStyle = "Default" -- Phong cách farm mặc định
 
--- Hệ thống lưu trữ mới
+-- Hệ thống lưu trữ
 local ConfigSystem = {}
-ConfigSystem.FileName = "AriseConfigV2_" .. player.Name .. ".json"
+ConfigSystem.FileName = "AriseOrionConfig_" .. player.Name .. ".json"
 ConfigSystem.DefaultConfig = {
     SelectedMobName = "",
+    SelectedWorld = "SoloWorld",
     FarmSelectedMob = false,
     AutoFarmNearestNPCs = false,
     MainAutoDestroy = false,
@@ -65,12 +70,26 @@ end
 -- Tải cấu hình khi khởi động
 ConfigSystem.LoadConfig()
 
+-- Tạo mapping giữa các map và danh sách mob tương ứng
+local mobsByWorld = {
+    ["SoloWorld"] = {"Soondoo", "Gonshee", "Daek", "Longin", "Anders", "Largalgan"},
+    ["NarutoWorld"] = {"Snake Man", "Blossom", "Black Crow"},
+    ["OPWorld"] = {"Shark Man", "Eminel", "Light Admiral"},
+    ["BleachWorld"] = {"Luryu", "Fyakuya", "Genji"},
+    ["BCWorld"] = {"Sortudo", "Michille", "Wind"},
+    ["ChainsawWorld"] = {"Heaven", "Zere", "Ika"},
+    ["JojoWorld"] = {"Diablo", "Gosuke", "Golyne"}
+}
+
+local selectedWorld = ConfigSystem.CurrentConfig.SelectedWorld or "SoloWorld"
+
 -- Tự động phát hiện HumanoidRootPart mới khi người chơi hồi sinh
 player.CharacterAdded:Connect(function(newCharacter)
     character = newCharacter
     hrp = newCharacter:WaitForChild("HumanoidRootPart")
 end)
 
+-- Utility Functions
 local function anticheat()
     local player = game.Players.LocalPlayer
     if player and player.Character then
@@ -177,6 +196,7 @@ local function moveToTarget(target)
     end
 end
 
+-- Farming Functions
 local function teleportAndTrackDeath()
     while teleportEnabled do
         local target = getNearestEnemy()
@@ -280,206 +300,7 @@ local function attackEnemy()
     end
 end
 
--- Farm Method Selection Dropdown
-local Fluent
-local SaveManager
-local InterfaceManager
-
--- Tối ưu cách tải thư viện Fluent và các add-on
-local function loadLibraries()
-    local success, result = pcall(function()
-        Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
-        SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
-        InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
-        return true
-    end)
-
-    if not success then
-        -- Thử tải từ URL dự phòng nếu URL chính thất bại
-        pcall(function()
-            Fluent = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Fluent.lua"))()
-            SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
-            InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
-        end)
-    end
-
-    return Fluent ~= nil
-end
-
--- Tải thư viện trước khi tiếp tục
-if not loadLibraries() then
-    error("Không thể tải thư viện Fluent. Vui lòng kiểm tra kết nối internet hoặc executor.")
-    return
-end
-
--- Tối ưu việc khởi tạo window
-local Window = Fluent:CreateWindow({
-    Title = "Kaihon Hub | Arise Crossover",
-    SubTitle = "",
-    TabWidth = 140,
-    Size = UDim2.fromOffset(450, 350),
-    Acrylic = false, -- Tắt hiệu ứng Acrylic để giảm tải
-    Theme = "Darker",
-    MinimizeKey = Enum.KeyCode.LeftControl
-})
-
-local Tabs = {
-    Discord = Window:AddTab({ Title = "INFO", Icon = ""}),
-    Main = Window:AddTab({ Title = "Main", Icon = "" }),
-    tp = Window:AddTab({ Title = "Teleports", Icon = "" }),
-    mount = Window:AddTab({ Title = "Mount Location/farm", Icon = "" }),
-    dungeon = Window:AddTab({ Title = "Dungeon ", Icon = "" }),
-    pets = Window:AddTab({ Title = "Pets ", Icon = "" }),
-    Player = Window:AddTab({ Title = "Player", Icon = "" }),
-    misc = Window:AddTab({ Title = "misc", Icon = "" }),
-    Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
-}
-
--- Tạo mapping giữa các map và danh sách mob tương ứng
-local mobsByWorld = {
-    ["SoloWorld"] = {"Soondoo", "Gonshee", "Daek", "Longin", "Anders", "Largalgan"},
-    ["NarutoWorld"] = {"Snake Man", "Blossom", "Black Crow"},
-    ["OPWorld"] = {"Shark Man", "Eminel", "Light Admiral"},
-    ["BleachWorld"] = {"Luryu", "Fyakuya", "Genji"},
-    ["BCWorld"] = {"Sortudo", "Michille", "Wind"},
-    ["ChainsawWorld"] = {"Heaven", "Zere", "Ika"},
-    ["JojoWorld"] = {"Diablo", "Gosuke", "Golyne"}
-}
-
-local selectedWorld = "SoloWorld" -- Default world
-
--- Dropdown để chọn World/Map
-Tabs.Main:AddDropdown("WorldDropdown", {
-    Title = "Select World",
-    Values = {"SoloWorld", "NarutoWorld", "OPWorld", "BleachWorld", "BCWorld", "ChainsawWorld", "JojoWorld"},
-    Multi = false,
-    Default = selectedWorld,
-    Callback = function(world)
-        selectedWorld = world
-        ConfigSystem.CurrentConfig.SelectedWorld = world
-        
-        -- Cập nhật danh sách mob dựa trên world được chọn
-        local mobDropdown = Fluent.Options.WorldMobDropdown
-        if mobDropdown then
-            mobDropdown:SetValues(mobsByWorld[world] or {})
-            -- Đặt giá trị mặc định nếu có mob
-            if #mobsByWorld[world] > 0 then
-                selectedMobName = mobsByWorld[world][1]
-                mobDropdown:SetValue(selectedMobName)
-                ConfigSystem.CurrentConfig.SelectedMobName = selectedMobName
-            else
-                selectedMobName = ""
-            end
-        end
-        
-        ConfigSystem.SaveConfig()
-        killedNPCs = {} -- Đặt lại danh sách NPC đã tiêu diệt khi thay đổi world
-    end
-})
-
--- Dropdown để chọn Mob trong world đã chọn
-Tabs.Main:AddDropdown("WorldMobDropdown", {
-    Title = "Select Enemy",
-    Values = mobsByWorld[selectedWorld] or {},
-    Multi = false,
-    Default = mobsByWorld[selectedWorld] and mobsByWorld[selectedWorld][1] or "",
-    Callback = function(mob)
-        selectedMobName = mob
-        ConfigSystem.CurrentConfig.SelectedMobName = mob
-        ConfigSystem.SaveConfig()
-        killedNPCs = {} -- Đặt lại danh sách NPC đã tiêu diệt khi thay đổi mob
-        print("Selected Mob:", selectedMobName) -- Gỡ lỗi
-    end
-})
-
-Tabs.Main:AddToggle("FarmSelectedMob", {
-    Title = "Farm Selected Mob",
-    Default = ConfigSystem.CurrentConfig.FarmSelectedMob or false,
-    Callback = function(state)
-        teleportEnabled = state
-        damageEnabled = state -- Đảm bảo tính năng tấn công mobs được kích hoạt
-        ConfigSystem.CurrentConfig.FarmSelectedMob = state
-        ConfigSystem.SaveConfig()
-        killedNPCs = {} -- Đặt lại danh sách NPC đã tiêu diệt khi bắt đầu farm
-        if state then
-            task.spawn(teleportToSelectedEnemy)
-        end
-    end
-})
-
-Tabs.Main:AddToggle("TeleportMobs", {
-    Title = "Auto farm (nearest NPCs)",
-    Default = ConfigSystem.CurrentConfig.AutoFarmNearestNPCs or false,
-    Callback = function(state)
-        teleportEnabled = state
-        ConfigSystem.CurrentConfig.AutoFarmNearestNPCs = state
-        ConfigSystem.SaveConfig()
-        if state then
-            task.spawn(teleportAndTrackDeath)
-        end
-    end
-})
-
-local Dropdown = Tabs.Main:AddDropdown("MovementMethod", {
-    Title = "Farming Method",
-    Values = {"Tween", "Teleport"},
-    Multi = false,
-    Default = ConfigSystem.CurrentConfig.FarmingMethod == "Teleport" and 2 or 1,
-    Callback = function(option)
-        movementMethod = option
-        ConfigSystem.CurrentConfig.FarmingMethod = option
-        ConfigSystem.SaveConfig()
-    end
-})
-
-Tabs.Main:AddToggle("DamageMobs", {
-    Title = "Damage Mobs ENABLE THIS",
-    Default = ConfigSystem.CurrentConfig.DamageMobs or false,
-    Callback = function(state)
-        damageEnabled = state
-        ConfigSystem.CurrentConfig.DamageMobs = state
-        ConfigSystem.SaveConfig()
-        if state then
-            task.spawn(attackEnemy)
-        end
-    end
-})
-
-
-
-Tabs.dungeon:AddToggle("TeleportMobs", { 
-    Title = "Auto farm Dungeon", 
-    Default = false, 
-    Flag = "AutoFarmDungeon", -- Thêm Flag để lưu cấu hình
-    Callback = function(state) 
-        teleportEnabled = state 
-        if state then 
-            task.spawn(teleportDungeon) 
-        end 
-    end 
-})
-
-Tabs.Main:AddToggle("GamepassShadowFarm", {
-    Title = "Gamepass Shadow farm",
-    Default = false,
-    Callback = function(state)
-        local attackatri = game:GetService("Players").LocalPlayer.Settings
-        local atri = attackatri:GetAttribute("AutoAttack")
-        
-        if state then
-            -- Bật tính năng
-            if atri == false then
-                attackatri:SetAttribute("AutoAttack", true)
-            end
-            print("Shadow farm đã bật")
-        else
-            -- Tắt tính năng
-            attackatri:SetAttribute("AutoAttack", false)
-            print("Shadow farm đã tắt")
-        end
-    end
-})
-
+-- Teleport Functions
 local function SetSpawnAndReset(spawnName)
     local args = {
         [1] = {
@@ -494,150 +315,24 @@ local function SetSpawnAndReset(spawnName)
     local remote = game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent")
     remote:FireServer(unpack(args))
 
-    -- Đợi một chút trước khi hồi sinh (tùy chọn, để đảm bảo điểm hồi sinh được thiết lập)
     task.wait(0.5)
 
-    -- Hồi sinh nhân vật
     local player = game.Players.LocalPlayer
-if player.Character and player.Character.Parent then
-    local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
-    if humanoid then
-        humanoid.Health = 0 -- Tạo ra cái chết tự nhiên mà không xóa nhân vật đột ngột
-    end
-end
-
-end
-
-Tabs.tp:AddButton({
-    Title = "Leveling City",
-    Description = "Set spawn & reset",
-    Callback = function()
-        SetSpawnAndReset("SoloWorld")
-    end
-})
-
-Tabs.tp:AddButton({
-    Title = "Grass Village",
-    Description = "Set spawn & reset",
-    Callback = function()
-        SetSpawnAndReset("NarutoWorld")
-    end
-})
-
-Tabs.tp:AddButton({
-    Title = "Brum Island",
-    Description = "Set spawn & reset",
-    Callback = function()
-        SetSpawnAndReset("OPWorld") -- Thay đổi thành tên điểm hồi sinh đúng
-    end
-})
-
-Tabs.tp:AddButton({
-    Title = "Faceheal Town",
-    Description = "Set spawn & reset",
-    Callback = function()
-        SetSpawnAndReset("BleachWorld")
-    end
-})
-
-Tabs.tp:AddButton({
-    Title = "Lucky Kingdom",
-    Description = "Set spawn & reset",
-    Callback = function()
-        SetSpawnAndReset("BCWorld")
-    end
-})
-
-Tabs.tp:AddButton({
-    Title = "Nipon City",
-    Description = "Set spawn & reset",
-    Callback = function()
-        SetSpawnAndReset("ChainsawWorld")
-    end
-})
-
-Tabs.tp:AddButton({
-    Title = "Mori Town",
-    Description = "Set spawn & reset",
-    Callback = function()
-        SetSpawnAndReset("JojoWorld")
-    end
-})
-
-local TweenService = game:GetService("TweenService")
-
-
-
-
-
--- Lấy Player và HumanoidRootPart
-local TweenService = game:GetService("TweenService")
-local player = game.Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local hrp = character:WaitForChild("HumanoidRootPart")
-
--- Cập nhật HRP khi nhân vật hồi sinh
-player.CharacterAdded:Connect(function(newCharacter)
-    character = newCharacter
-    hrp = character:WaitForChild("HumanoidRootPart") -- Lấy HRP mới sau khi hồi sinh
-end)
-
--- Hàm di chuyển (Luôn sử dụng HRP mới nhất)
-local function teleportWithTween(targetCFrame)
-    if hrp then
-        local tweenInfo = TweenInfo.new(
-            2, -- Thời gian (giây)
-            Enum.EasingStyle.Sine,
-            Enum.EasingDirection.Out,
-            0, -- Không lặp lại
-            false, -- Không đảo ngược
-            0 -- Không độ trễ
-        )
-
-        local tweenGoal = {CFrame = targetCFrame}
-        local tween = TweenService:Create(hrp, tweenInfo, tweenGoal)
-        tween:Play()
-    end
-end
-
-
--- Locations List
-local locations = {
-    {Name = "Location 1", CFrame = CFrame.new(-6161.25781, 140.639832, 5512.9668, -0.41691944, -8.07482721e-08, 0.908943415, -2.94452178e-07, 1, -4.62235228e-08, -0.908943415, -2.86911842e-07, -0.41691944)},
-    {Name = "Location 2", CFrame = CFrame.new(-5868.44141, 132.70488, 362.519379, 0.836233854, -7.47273816e-08, -0.548372984, 2.59595481e-07, 1, 2.59595481e-07, 0.548372984, -3.59437678e-07, 0.836233854)},
-    {Name = "Location 3", CFrame = CFrame.new(-5430.81006, 107.441559, -5502.25244, 0.8239398, -3.60997859e-07, -0.566677332, 2.59595453e-07, 1, -2.59595396e-07, 0.566677332, 6.67841249e-08, 0.8239398)},
-    {Name = "Location 4", CFrame = CFrame.new(-702.243225, 133.344467, -3538.11646, 0.978662074, 0.000114096198, -0.205476329, -0.000112703143, 1, 1.84834444e-05, 0.205476329, 5.06878177e-06, 0.978662074)},
-    {Name = "Location 5", CFrame = CFrame.new(450.001709, 117.564827, 3435.4292, -0.999887109, -1.20863996e-12, 0.0150266131, -1.12492459e-12, 1, 5.57959278e-12, -0.0150266131, 5.56205906e-12, -0.999887109)},
-    {Name = "Location 6", CFrame = CFrame.new(3230.96826, 135.41008, 36.1600113, -0.534268856, -4.75206689e-05, 0.845314622, -7.48304665e-05, 1, 8.92103617e-06, -0.845314622, -5.84890549e-05, -0.534268856)},
-    {Name = "Location 7", CFrame = CFrame.new(4325.36523, 118.995422, -4819.78857, -0.257801384, 3.98855832e-07, -0.966197908, -5.63039578e-07, 1, 5.63040146e-07, 0.966197908, 6.89160231e-07, -0.257801384)}
-    
-    
-}
-
--- Add buttons for each location
-for _, loc in ipairs(locations) do
-    Tabs.mount:AddButton({
-        Title = loc.Name,
-        Callback = function()
-            teleportWithTween(loc.CFrame)
+    if player.Character and player.Character.Parent then
+        local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid.Health = 0
         end
-    })
+    end
 end
 
-
+-- Auto Destroy/Arise Functions
 local autoDestroy = false
 local autoArise = false
 
--- Function to Fire DestroyPrompt
-
-
-local enemiesFolder = workspace:WaitForChild("__Main"):WaitForChild("__Enemies"):WaitForChild("Client")
-
-
 local function fireDestroy()
     while autoDestroy do
-        task.wait(0.3)  -- Delay to prevent overloading
-
+        task.wait(0.3)
         for _, enemy in ipairs(enemiesFolder:GetChildren()) do
             if enemy:IsA("Model") then
                 local rootPart = enemy:FindFirstChild("HumanoidRootPart")
@@ -652,17 +347,9 @@ local function fireDestroy()
     end
 end
 
-
-
--- Function to Fire ArisePrompt
-
-local enemiesFolder = workspace:WaitForChild("__Main"):WaitForChild("__Enemies"):WaitForChild("Client")
-
-
 local function fireArise()
     while autoArise do
-        task.wait(0.3)  -- Delay to prevent overloading
-
+        task.wait(0.3)
         for _, enemy in ipairs(enemiesFolder:GetChildren()) do
             if enemy:IsA("Model") then
                 local rootPart = enemy:FindFirstChild("HumanoidRootPart")
@@ -677,1064 +364,359 @@ local function fireArise()
     end
 end
 
-
-
-
-
--- Auto Destroy Toggle
-Tabs.Main:AddToggle("AutoDestroy", {
-    Title = "Auto Destroy",
-    Default = ConfigSystem.CurrentConfig.MainAutoDestroy or false,
-    Callback = function(state)
-        autoDestroy = state
-        ConfigSystem.CurrentConfig.MainAutoDestroy = state
-        ConfigSystem.SaveConfig()
-        if state then
-            task.spawn(fireDestroy)
-        end
-    end
+-- Tạo Window với Orion UI
+local Window = OrionLib:MakeWindow({
+    Name = "Kaihon Hub | Arise Crossover",
+    HidePremium = true,
+    SaveConfig = true,
+    ConfigFolder = "KaihonHub_AriseCrossover",
+    IntroEnabled = false
 })
 
--- Auto Arise Toggle
-Tabs.Main:AddToggle("AutoArise", {
-    Title = "Auto Arise",
-    Default = ConfigSystem.CurrentConfig.MainAutoArise or false,
-    Callback = function(state)
-        autoArise = state
-        ConfigSystem.CurrentConfig.MainAutoArise = state
-        ConfigSystem.SaveConfig()
-        if state then
-            task.spawn(fireArise)
-        end
-    end
+-- INFO Tab
+local InfoTab = Window:MakeTab({
+    Name = "INFO",
+    Icon = "rbxassetid://4483345998",
+    PremiumOnly = false
 })
 
-Tabs.dungeon:AddToggle("AutoDestroy", {
-    Title = "Auto Destroy",
-    Default = false,
-    Flag = "DungeonAutoDestroy", -- Thêm Flag để lưu cấu hình
-    Callback = function(state)
-        autoDestroy = state
-        if state then
-            task.spawn(fireDestroy)
-        end
-    end
-})
-
--- Auto Arise Toggle
-Tabs.dungeon:AddToggle("AutoArise", {
-    Title = "Auto Arise",
-    Default = false,
-    Flag = "DungeonAutoArise", -- Thêm Flag để lưu cấu hình
-    Callback = function(state)
-        autoArise = state
-        if state then
-            task.spawn(fireArise)
-        end
-    end
-})
-
-
-local TweenService = game:GetService("TweenService")
-local Players = game:GetService("Players")
-local player = Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local hrp = character:WaitForChild("HumanoidRootPart")
-
-local dungeonFolder = workspace:WaitForChild("__Main"):WaitForChild("__Dungeon")
-
--- Variable to control teleporting
-local teleportingEnabled = false
-
--- Function to create a dungeon
-local function createDungeon()
-    print("[DEBUG] Đang cố gắng tạo dungeon...")
-    local args = {
-        [1] = {
-            [1] = {
-                ["Event"] = "DungeonAction",
-                ["Action"] = "Create"
-            },
-            [2] = "\n" 
-        }
-    }
-    ReplicatedStorage:WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent"):FireServer(unpack(args))
-    print("[DEBUG] Đã kích hoạt sự kiện tạo Dungeon!")
-end
-
--- Function to start the dungeon
-local function startDungeon()
-    local dungeonInstance = dungeonFolder:FindFirstChild("Dungeon")
-    if dungeonInstance then
-        local dungeonID = dungeonInstance:GetAttribute("ID")
-        if dungeonID then
-            print("[DEBUG] Bắt đầu dungeon với ID:", dungeonID)
-            local args = {
-                [1] = {
-                    [1] = {
-                        ["Dungeon"] = dungeonID,
-                        ["Event"] = "DungeonAction",
-                        ["Action"] = "Start"
-                    },
-                    [2] = "\n"
-                }
-            }
-            ReplicatedStorage:WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent"):FireServer(unpack(args))
-            print("[DEBUG] Đã kích hoạt sự kiện bắt đầu Dungeon!")
-        else
-            print("[LỖI] Không tìm thấy ID của Dungeon!")
-        end
-    else
-        print("[LỖI] Không tìm thấy instance của Dungeon!")
-    end
-end
-
--- Function to teleport directly to an object and bypass anti-cheat
-local function teleportToObject(object)
-    if not object or not object:IsA("Part") or not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then 
-        return 
-    end
-
-    -- Vượt qua anti-cheat
-    local f = player.Character:FindFirstChild("CharacterScripts") and player.Character.CharacterScripts:FindFirstChild("FlyingFixer")
-    if f then f:Destroy() end
-
-    local cha = player.Character:FindFirstChild("CharacterScripts") and player.Character.CharacterScripts:FindFirstChild("CharacterUpdater")
-    if cha then cha:Destroy() end
-
-    -- Dịch chuyển trực tiếp
-    hrp.CFrame = object.CFrame
-    
-    -- Dùng task.delay để giảm tải
-    task.delay(2, createDungeon)
-    task.delay(3, startDungeon)
-end
-
--- Function to continuously teleport to objects when enabled
-local function teleportLoop()
-    while teleportingEnabled do
-        print("[DEBUG] Đang tìm kiếm các đối tượng dungeon...")
-        local foundObject = false
-        for _, object in ipairs(dungeonFolder:GetChildren()) do
-            if object:IsA("Part") then
-                foundObject = true
-                teleportToObject(object)
-                task.wait(1) -- Ngăn thực thi quá mức
-            end
-        end
-        if not foundObject then
-            print("[CẢNH BÁO] Không tìm thấy đối tượng dungeon hợp lệ!")
-        end
-        task.wait(0.5) -- Độ trễ trước khi kiểm tra lại
-    end
-end
-
-
-
--- Add the toggle button to start/stop teleporting
-Tabs.dungeon:AddToggle("TeleportToDungeon", {
-    Title = "Teleport to Dungeon",
-    Default = false,
-    Callback = function(state)
-        teleportingEnabled = state
-        print("[DEBUG] Đã bật/tắt dịch chuyển:", state)
-        if state then
-            task.spawn(teleportLoop) -- Bắt đầu vòng lặp dịch chuyển khi bật
-        end
-    end
-})
-
-
-local AutoDetectToggle = Tabs.dungeon:AddToggle("AutoDetectDungeon", {Title = "Auto Detect Dungeon (KEEP THIS ON)", Default = true})
-
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local player = Players.LocalPlayer
-
-local villageSpawns = {
-    ["Grass Village"] = "NarutoWorld",
-    ["BRUM ISLAND"] = "OPWorld",
-    ["Leveling City"] = "SoloWorld",
-    ["FACEHEAL TOWN"] = "BleachWorld",
-    ["Lucky"] = "BCWorld",
-    ["Nipon City"] = "ChainsawWorld",
-    ["Mori Town"] = "JojoWorld",
-}
-
-local function SetSpawnAndReset(spawnName)
-    local args = {
-        [1] = {
-            [1] = {
-                ["Event"] = "ChangeSpawn",
-                ["Spawn"] = spawnName
-            },
-            [2] = "\n"
-        }
-    }
-
-    local remote = ReplicatedStorage:WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent")
-    remote:FireServer(unpack(args))
-
-    -- Đợi một chút trước khi hồi sinh (tùy chọn, để đảm bảo điểm hồi sinh được thiết lập)
-    task.wait(0.5)
-
-    -- Hồi sinh nhân vật
-    if player.Character then
-        player.Character:BreakJoints() -- Buộc nhân vật phải hồi sinh
-    end
-end
-
-local function detectDungeon()
-    player.PlayerGui.Warn.ChildAdded:Connect(function(dungeon)
-        if dungeon:IsA("Frame") and AutoDetectToggle.Value then
-            print("Đã phát hiện Dungeon!")
-            for _, child in ipairs(dungeon:GetChildren()) do
-                if child:IsA("TextLabel") then
-                    for village, spawnName in pairs(villageSpawns) do
-                        if string.find(string.lower(child.Text), string.lower(village)) then
-                            teleportEnabled = false
-                            print("Đã phát hiện làng:", village)
-                            SetSpawnAndReset(spawnName)
-                            return
-                        end
-                    end
-                end
-            end
-        end
-    end)
-end
-
--- Đảm bảo hàm hoạt động
-AutoDetectToggle:OnChanged(function(value)
-    if value then
-        detectDungeon()
-    end
-end)
-
-detectDungeon()
-
-local function resetAutoFarm()
-    -- Đặt lại tất cả trạng thái và hàm
-    killedNPCs = {} -- Đặt lại số lượng NPC đã tiêu diệt
-
-    print("AutoFarm đã được đặt lại!") -- In thông báo xác nhận
-
-    -- Khởi động lại tất cả các hàm nếu cần
-end
-
-task.spawn(function()
-    while true do
-        task.wait(120) -- Đợi 120 giây
-        resetAutoFarm() -- Gọi hàm đặt lại
-    end
-end)
-
-local rankMapping = { "E", "D", "C", "B", "A", "S", "SS" }
-
--- Dropdown để chọn các cấp độ để bán
-local SellDropdown = Tabs.pets:AddDropdown("ChooseRankToSell", {
-    Title = "Choose Rank to Sell",
-    Values = rankMapping,
-    Multi = true,
-    Default = {}
-})
-
--- Dropdown để chọn pet cần giữ lại
-local KeepPetsDropdown = Tabs.pets:AddDropdown("ChoosePetsToKeep", {
-    Title = "Pets to Not Delete",
-    Values = {},
-    Multi = true,
-    Default = {}
-})
-
--- Nút để làm mới dropdown "Keep Pets"
-Tabs.pets:AddButton({
-    Title = "Refresh Keep Pets List",
-    Callback = function()
-        updateKeepPetsDropdown()
-    end
-})
-
--- Hàm để lấy pet theo cấp độ đã chọn
-local function getPetsByRank(selectedRanks, keepPets)
-    local player = game:GetService("Players").LocalPlayer
-    local petsFolder = player.leaderstats.Inventory:FindFirstChild("Pets")
-    if not petsFolder then return {} end
-
-    local petsByRank = {}  -- Lưu trữ pet theo cấp độ
-    local petsToSell = {}  -- Các pet sẽ được bán
-    local keepOnePet = {}  -- Đảm bảo chỉ giữ 1 pet mỗi loại đã chọn
-
-    for _, pet in ipairs(petsFolder:GetChildren()) do
-        local rankValue = pet:GetAttribute("Rank")
-        local petName = pet.Name
-
-        if rankValue and rankMapping[rankValue] and selectedRanks[rankMapping[rankValue]] then
-            petsByRank[rankMapping[rankValue]] = petsByRank[rankMapping[rankValue]] or {}
-            table.insert(petsByRank[rankMapping[rankValue]], petName)
-        end
-    end
-
-    -- Xử lý từng cấp độ
-    for rank, petList in pairs(petsByRank) do
-        table.sort(petList) -- Sắp xếp pet để đảm bảo tính nhất quán
-
-        local keptOne = false
-        for _, pet in ipairs(petList) do
-            if keepPets[pet] then
-                if not keepOnePet[pet] then
-                    keepOnePet[pet] = true -- Chỉ giữ 1 bản sao của pet này
-                    keptOne = true
-                else
-                    table.insert(petsToSell, pet) -- Bán các bản sao thừa
-                end
-            elseif not keptOne then
-                keptOne = true -- Đảm bảo ít nhất 1 pet mỗi cấp độ được giữ lại
-            else
-                table.insert(petsToSell, pet) -- Bán các pet còn lại
-            end
-        end
-    end
-
-    return petsToSell
-end
-
--- Hàm để bán pet
-local function sellPets()
-    local selectedRanks = SellDropdown.Value
-    local keepPets = KeepPetsDropdown.Value
-    local pets = getPetsByRank(selectedRanks, keepPets)
-
-    if #pets > 0 then
-        local args = {
-            [1] = {
-                [1] = {
-                    ["Event"] = "SellPet",
-                    ["Pets"] = pets
-                },
-                [2] = "\t"
-            }
-        }
-        game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent"):FireServer(unpack(args))
-    end
-end
-
--- Hàm để cập nhật dropdown "Keep Pets"
-function updateKeepPetsDropdown()
-    local player = game:GetService("Players").LocalPlayer
-    local petsFolder = player.leaderstats.Inventory:FindFirstChild("Pets")
-    if not petsFolder then return end
-
-    local petNames = {} -- Mảng cho dropdown
-
-    for _, pet in ipairs(petsFolder:GetChildren()) do
-        if not table.find(petNames, pet.Name) then
-            table.insert(petNames, pet.Name) -- Thêm tên pet chỉ một lần
-        end
-    end
-
-    KeepPetsDropdown:SetValues(petNames) -- Cập nhật dropdown với tên pet
-end
-
--- Bắt đầu vòng lặp bán
-local function startSellingLoop()
-    while true do
-        sellPets()
-        wait(1) -- Ngăn spam
-    end
-end
-
--- Chạy vòng lặp trong một luồng riêng biệt
-spawn(startSellingLoop)
-
--- Khởi tạo dropdown pet khi bắt đầu
-updateKeepPetsDropdown()
-
--- Làm mới danh sách pet khi dropdown thay đổi
-SellDropdown:OnChanged(updateKeepPetsDropdown)
-KeepPetsDropdown:OnChanged(updateKeepPetsDropdown)
-
-local VirtualUser = game:GetService("VirtualUser")
-local LocalPlayer = game:GetService("Players").LocalPlayer
-
-local antiAfkConnection
-
-local AntiAfkToggle = Tabs.Player:AddToggle("AntiAfk", {
-    Title = "Anti AFK",
-    Default = false,
-    Callback = function(enabled)
-        if enabled then
-            print("Đã bật Anti AFK")
-            -- Đảm bảo không tạo nhiều kết nối
-            if not antiAfkConnection then
-                antiAfkConnection = LocalPlayer.Idled:Connect(function()
-                    VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
-                    task.wait(1) -- Thời gian chờ có thể điều chỉnh
-                    VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
-                end)
-            end
-        else
-            print("Đã tắt Anti AFK")
-            -- Ngắt kết nối sự kiện khi tắt
-            if antiAfkConnection then
-                antiAfkConnection:Disconnect()
-                antiAfkConnection = nil -- Đặt lại biến kết nối
-            end
-        end
-    end
-})
-
-
-
-local function getUniqueWeaponNames()
-    local weapons = {}
-    local seenNames = {} -- Để theo dõi tên duy nhất
-
-    local playerWeapons = game:GetService("Players").LocalPlayer.leaderstats.Inventory.Weapons:GetChildren()
-    print("Đang lấy danh sách vũ khí...") -- GỠ LỖI
-
-    for _, weapon in ipairs(playerWeapons) do
-        local weaponName = weapon:GetAttribute("Name") -- Lấy thuộc tính "Name"
-        if weaponName then
-            print("Đã tìm thấy vũ khí:", weaponName) -- GỠ LỖI
-            if not seenNames[weaponName] then
-                table.insert(weapons, weaponName)
-                seenNames[weaponName] = true -- Đánh dấu tên đã thấy
-            end
-        end
-    end
-    return weapons
-end
-
--- Tạo dropdown với tên vũ khí **duy nhất**
-local weaponNames = getUniqueWeaponNames()
-local WeaponDropdown = Tabs.misc:AddDropdown("WeaponDropdown", {
-    Title = "Select Weapon to Upgrade",
-    Description = "Choose a weapon to upgrade",
-    Values = weaponNames,
-    Multi = false, -- Chọn một
-    Default = ""
-})
-
--- Dropdown để chọn cấp độ nâng cấp (2-6)
-local LevelDropdown = Tabs.misc:AddDropdown("LevelDropdown", {
-    Title = "Select Upgrade Level",
-    Description = "Choose the level for upgrade",
-    Values = {"2", "3", "4", "5", "6", "7"},
-    Multi = false,
-    Default = "2"
-})
-
--- Bật/tắt tự động nâng cấp vũ khí
- local AutoUpgradeToggle = Tabs.misc:AddToggle("AutoUpgradeToggle", { Title = "Auto Upgrade Weapon", Default = false })
-
-local function AutoUpgradeWeapon()
-    while AutoUpgradeToggle.Value do
-        local selectedWeapon = WeaponDropdown.Value
-        local selectedLevel = tonumber(LevelDropdown.Value) or 2
-
-        if selectedWeapon and selectedWeapon ~= "" then
-            local args = {
-                [1] = {
-                    [1] = {
-                        ["Type"] = selectedWeapon,
-                        ["BuyType"] = "Gems",
-                        ["Weapons"] = {},
-                        ["Event"] = "UpgradeWeapon",
-                        ["Level"] = selectedLevel
-                    },
-                    [2] = "\n"
-                }
-            }
-
-            game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent"):FireServer(unpack(args))
-            task.wait(0.1) -- Điều chỉnh độ trễ nếu cần
-        else
-            Fluent:Notify({
-                Title = "Error",
-                Content = "Vui lòng chọn vũ khí trước khi nâng cấp.",
-                Duration = 5
-            })
-            print("LỖI: Không có vũ khí nào được chọn!") -- GỠ LỖI
-            break
-        end
-    end
-end
-
-AutoUpgradeToggle:OnChanged(function(Value)
-    if Value then
-        task.spawn(AutoUpgradeWeapon) -- Bắt đầu nâng cấp trong một luồng riêng biệt
-    end
-end)
-
- local TeleportService = game:GetService("TeleportService")
-local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
-local LocalPlayer = Players.LocalPlayer
-local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local AppearFolder = workspace:FindFirstChild("__Extra") and workspace.__Extra:FindFirstChild("__Appear")
-
-local locations = {
-    {Name = "Location 1", CFrame = CFrame.new(-6161.25781, 140.639832, 5512.9668)},
-    {Name = "Location 2", CFrame = CFrame.new(-5868.44141, 132.70488, 362.519379)},
-    {Name = "Location 3", CFrame = CFrame.new(-5430.81006, 107.441559, -5502.25244)},
-    {Name = "Location 4", CFrame = CFrame.new(-702.243225, 133.344467, -3538.11646)},
-    {Name = "Location 5", CFrame = CFrame.new(450.001709, 117.564827, 3435.4292)},
-    {Name = "Location 6", CFrame = CFrame.new(3230.96826, 135.41008, 36.1600113)},
-    {Name = "Location 7", CFrame = CFrame.new(4325.36523, 118.995422, -4819.78857)}
-}
-
-local PlaceID = game.PlaceId
-local AllIDs = {}
-local foundAnything = ""
-local actualHour = os.date("!*t").hour
-local File = pcall(function()
-    AllIDs = game:GetService('HttpService'):JSONDecode(readfile("NotSameServers.json"))
-end)
-
-if not File then
-    table.insert(AllIDs, actualHour)
-    writefile("NotSameServers.json", game:GetService('HttpService'):JSONEncode(AllIDs))
-end
-
-function TPReturner()
-    local Site
-    if foundAnything == "" then
-        Site = game.HttpService:JSONDecode(game:HttpGet('https://games.roblox.com/v1/games/' .. PlaceID .. '/servers/Public?sortOrder=Asc&limit=100'))
-    else
-        Site = game.HttpService:JSONDecode(game:HttpGet('https://games.roblox.com/v1/games/' .. PlaceID .. '/servers/Public?sortOrder=Asc&limit=100&cursor=' .. foundAnything))
-    end
-    local ID = ""
-    if Site.nextPageCursor and Site.nextPageCursor ~= "null" and Site.nextPageCursor ~= nil then
-        foundAnything = Site.nextPageCursor
-    end
-    local num = 0
-    for _, v in pairs(Site.data) do
-        local Possible = true
-        ID = tostring(v.id)
-        if tonumber(v.maxPlayers) > tonumber(v.playing) then
-            for _, Existing in pairs(AllIDs) do
-                if num ~= 0 then
-                    if ID == tostring(Existing) then
-                        Possible = false
-                    end
-                else
-                    if tonumber(actualHour) ~= tonumber(Existing) then
-                        local delFile = pcall(function()
-                            delfile("NotSameServers.json")
-                            AllIDs = {}
-                            table.insert(AllIDs, actualHour)
-                        end)
-                    end
-                end
-                num = num + 1
-            end
-            if Possible then
-                table.insert(AllIDs, ID)
-                wait()
-                pcall(function()
-                    writefile("NotSameServers.json", game:GetService('HttpService'):JSONEncode(AllIDs))
-                    wait()
-                    game:GetService("TeleportService"):TeleportToPlaceInstance(PlaceID, ID, Players.LocalPlayer)
-                end)
-                wait(4)
-                break -- Thoát vòng lặp sau khi tìm thấy máy chủ phù hợp để dịch chuyển đến
-            end
-        end
-    end
-end
-
-local function hasSpawned()
-    return AppearFolder and #AppearFolder:GetChildren() > 0
-end
-
-local function tweenTeleport(targetCFrame)
-    if not Character or not Character:FindFirstChild("HumanoidRootPart") then return end
-    local HRP = Character.HumanoidRootPart
-    local Tween = TweenService:Create(HRP, TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {CFrame = targetCFrame})
-    Tween:Play()
-    Tween.Completed:Wait()
-end
-local function fireProximityPrompts()
-    if not AppearFolder then return end
-    for _, mount in ipairs(AppearFolder:GetChildren()) do
-        for _, descendant in ipairs(mount:GetDescendants()) do
-            if descendant:IsA("ProximityPrompt") then
-                fireproximityprompt(descendant)
-            end
-        end
-    end
-end
-
-local DelayToggle = false
-
-local function checkMountsAndTeleport()
-    local inventoryMounts = {}
-    for _, mount in ipairs(LocalPlayer.leaderstats.Inventory.Mounts:GetChildren()) do
-        table.insert(inventoryMounts, mount.Name:sub(1, 4))
-    end
-
-    for _, mount in ipairs(AppearFolder:GetChildren()) do
-        local mountId = mount.Name:sub(1, 4)
-        for _, invMount in ipairs(inventoryMounts) do
-            if mountId == invMount then
-                Fluent:Notify({
-                    Title = "Mount Detected!",
-                    Content = "Tìm thấy mount trùng khớp! Đang chuyển máy chủ...",
-                    Duration = 5
-                })
-                TPReturner()
-                return
-            end
-        end
-    end
-  for _, mount in ipairs(AppearFolder:GetChildren()) do
-        local targetPosition = mount:GetPivot()
-        tweenTeleport(targetPosition)
-
-        if DelayToggle then
-            task.wait(15)  -- Đợi 15 giây CHỈ KHI bật toggle
-        end
-
-        fireProximityPrompts()
-    end
-end
-
-local function teleportSequence()
-    for _, loc in ipairs(locations) do
-        tweenTeleport(loc.CFrame)
-        task.wait(3)
-
-        if hasSpawned() then
-            checkMountsAndTeleport()
-            Fluent:Notify({
-                Title = "Mount Collected!",
-                Content = "Đang chuyển máy chủ...",
-                Duration = 5
-            })
-            TPReturner()
-            return
-        end
-    end
-    TPReturner()
-end
-
-
-
-
-local TeleportToggle = Tabs.mount:AddToggle("AutoTeleport", {Title = "Auto Find Mount (serverHop)", Default = false })
-
-TeleportToggle:OnChanged(function(enabled)
-    if enabled then
-        teleportSequence()
-    end
-end)
-
-local DelayToggleOption = Tabs.mount:AddToggle("DelayBeforeFire", {Title = "Wait 15s ENABLE THIS IF U GET KICKED", Default = false })
-
-DelayToggleOption:OnChanged(function(enabled)
-    DelayToggle = enabled
-end)
-
-
-
-local function getUniquePetNames()
-    local pets = {}
-    local seenNames = {} -- To track unique names
-
-    local playerPets = game:GetService("Players").LocalPlayer.leaderstats.Inventory.Pets:GetChildren()
-    print("Fetching pets...") -- DEBUG
-
-    for _, pet in ipairs(playerPets) do
-        local petName = pet:GetAttribute("Name") -- Get "Name" attribute
-        if petName then
-            print("Found Pet:", petName) -- DEBUG
-            if not seenNames[petName] then
-                table.insert(pets, petName)
-                seenNames[petName] = true -- Mark name as seen
-            end
-        end
-    end
-    return pets
-end
-
--- Populate dropdown with **unique** pet names
-
-
-
-
-
-
-
-local autoEquipEnabled = false
-
-local function EquipBestPets()
-    local player = game:GetService("Players").LocalPlayer
-    local petsFolder = player.leaderstats.Inventory.Pets
-    local maxEquip = player.leaderstats.Values:GetAttribute("MaxEquipPets") or 1
-    local bestPets = {}
-
-    local petsList = {}
-    for _, pet in ipairs(petsFolder:GetChildren()) do
-        local rank = pet:GetAttribute("Rank")
-        if rank and typeof(rank) == "number" then
-            table.insert(petsList, {name = pet.Name, rank = rank})
-        end
-    end
-
-    table.sort(petsList, function(a, b) return a.rank > b.rank end)
-
-    local equipCount = 0
-    for _, petData in ipairs(petsList) do
-        if equipCount < maxEquip then
-            table.insert(bestPets, petData.name)
-            equipCount = equipCount + 1
-        else
-            break
-        end
-    end
-
-    if #bestPets > 0 then
-        game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent"):FireServer({
-            {["Event"] = "EquipBest", ["Pets"] = bestPets},
-            "\n"
-        })
-    end
-end
-
-
-local Toggle = Tabs.pets:AddToggle("AutoEquip", { Title = "Auto Equip Best Pets", Default = false })
-
-Toggle:OnChanged(function(state)
-    autoEquipEnabled = state
-    if state then
-        Fluent:Notify({ Title = "Auto Equip", Content = "Enabled. Equipping every 2 minutes.", Duration = 5 })
-        task.spawn(function()
-            while autoEquipEnabled do
-                EquipBestPets()
-                wait(120)
-            end
-        end)
-    else
-        Fluent:Notify({ Title = "Auto Equip", Content = "Disabled.", Duration = 5 })
-    end
-end)
-
-Tabs.Player:AddButton({
-    Title = "Boost FPS",
-    Description = "Lowers graphics",
-    Callback = function()
-        local Optimizer = {Enabled = false}
-
-        local function DisableEffects()
-            for _, v in pairs(game:GetDescendants()) do
-                if v:IsA("ParticleEmitter") or v:IsA("Smoke") or v:IsA("Fire") or v:IsA("Sparkles") then
-                    v.Enabled = not Optimizer.Enabled
-                end
-                if v:IsA("PostEffect") or v:IsA("BloomEffect") or v:IsA("BlurEffect") or v:IsA("SunRaysEffect") then
-                    v.Enabled = not Optimizer.Enabled
-                end
-            end
-        end
-
-        local function MaximizePerformance()
-            local lighting = game:GetService("Lighting")
-            if Optimizer.Enabled then
-                lighting.GlobalShadows = false
-                lighting.FogEnd = 9e9
-                lighting.Brightness = 2
-                settings().Rendering.QualityLevel = 1
-                settings().Physics.PhysicsEnvironmentalThrottle = 1
-                settings().Rendering.MeshPartDetailLevel = Enum.MeshPartDetailLevel.Level01
-                settings().Physics.AllowSleep = true
-                settings().Physics.ForceCSGv2 = false
-                settings().Physics.DisableCSGv2 = true
-                settings().Rendering.EagerBulkExecution = true
-
-                game:GetService("StarterGui"):SetCore("TopbarEnabled", false)
-
-                settings().Network.IncomingReplicationLag = 0
-                settings().Rendering.MaxPartCount = 100000
-            else
-                lighting.GlobalShadows = true
-                lighting.FogEnd = 100000
-                lighting.Brightness = 3
-                settings().Rendering.QualityLevel = 7
-                settings().Physics.PhysicsEnvironmentalThrottle = 0
-                settings().Rendering.MeshPartDetailLevel = Enum.MeshPartDetailLevel.Level04
-                settings().Physics.AllowSleep = false
-                settings().Physics.ForceCSGv2 = true
-                settings().Physics.DisableCSGv2 = false
-                settings().Rendering.EagerBulkExecution = false
-
-                game:GetService("StarterGui"):SetCore("TopbarEnabled", true)
-
-                settings().Network.IncomingReplicationLag = 1
-                settings().Rendering.MaxPartCount = 500000
-            end
-        end
-
-        local function OptimizeInstances()
-            for _, v in pairs(game:GetDescendants()) do
-                if v:IsA("BasePart") then
-                    v.CastShadow = not Optimizer.Enabled
-                    v.Reflectance = Optimizer.Enabled and 0 or v.Reflectance
-                    v.Material = Optimizer.Enabled and Enum.Material.SmoothPlastic or v.Material
-                end
-                if v:IsA("Decal") or v:IsA("Texture") then
-                    v.Transparency = Optimizer.Enabled and 1 or 0
-                end
-                if v:IsA("MeshPart") then
-                    v.RenderFidelity = Optimizer.Enabled and Enum.RenderFidelity.Performance or Enum.RenderFidelity.Precise
-                end
-            end
-
-            game:GetService("Debris"):SetAutoCleanupEnabled(true)
-        end
-
-        local function CleanMemory()
-            if Optimizer.Enabled then
-                game:GetService("Debris"):AddItem(Instance.new("Model"), 0)
-                settings().Physics.ThrottleAdjustTime = 2
-                game:GetService("RunService"):Set3dRenderingEnabled(false)
-            else
-                game:GetService("RunService"):Set3dRenderingEnabled(true)
-            end
-        end
-
-        local function ToggleOptimizer()
-            Optimizer.Enabled = not Optimizer.Enabled
-            DisableEffects()
-            MaximizePerformance()
-            OptimizeInstances()
-            CleanMemory()
-            print("FPS Booster: " .. (Optimizer.Enabled and "ON" or "OFF"))
-        end
-
-        game:GetService("UserInputService").InputBegan:Connect(function(input)
-            if input.KeyCode == Enum.KeyCode.RightControl then
-                ToggleOptimizer()
-            end
-        end)
-
-        ToggleOptimizer()
-
-        game:GetService("RunService").Heartbeat:Connect(function()
-            if Optimizer.Enabled then
-                CleanMemory()
-            end
-        end)
-    end
-})
-
-
-
-local TweenService = game:GetService("TweenService")
-local Players = game:GetService("Players")
-local player = Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local hrp = character:WaitForChild("HumanoidRootPart")
-
-local targetCFrame = CFrame.new(
-    3648.76318, 223.552261, 2637.36719, 
-    0.846323907, 7.72367986e-18, -0.532668591, 
-    -1.10462046e-17, 1, -3.05065368e-18, 
-    0.532668591, 8.46580728e-18, 0.846323907
+InfoTab:AddParagraph("🎉 Chào mừng đến với Kaihon Hub!", 
+    "Mở khóa trải nghiệm tốt nhất với các tính năng cao cấp!\n\n" ..
+    "✅ Vượt qua Anti-Cheat nâng cao\n" ..
+    "⚡ Thực thi nhanh hơn & Tối ưu hóa\n" ..
+    "🔄 Cập nhật độc quyền\n" ..
+    "🎁 Hỗ trợ & Cộng đồng"
 )
 
-local function tweenToPivot()
-    hrp.CFrame = targetCFrame
-end
-
-
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-
-local speedValue = 16 -- Tốc độ di chuyển mặc định
-local jumpValue = 50  -- Lực nhảy mặc định
-local speedEnabled = false
-local jumpEnabled = false
-
-local function updateCharacter()
-    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-        local humanoid = LocalPlayer.Character.Humanoid
-        humanoid.WalkSpeed = speedEnabled and speedValue or 16
-        humanoid.JumpPower = jumpEnabled and jumpValue or 50
-    end
-end
-
--- Nhập tốc độ
-local SpeedInput = Tabs.Player:AddInput("SpeedInput", {
-    Title = "Speed",
-    Default = tostring(speedValue),
-    Placeholder = "Enter speed",
-    Numeric = true,
-    Finished = true, 
-    Callback = function(Value)
-        speedValue = tonumber(Value) or 16
-        updateCharacter() -- Cập nhật nhân vật ngay lập tức khi tốc độ thay đổi
-    end
-})
-
--- Nhập lực nhảy
-local JumpInput = Tabs.Player:AddInput("JumpInput", {
-    Title = "Jump Power",
-    Default = tostring(jumpValue),
-    Placeholder = "Enter jump power",
-    Numeric = true,
-    Finished = true, 
-    Callback = function(Value)
-        jumpValue = tonumber(Value) or 50
-        updateCharacter() -- Cập nhật nhân vật ngay lập tức khi lực nhảy thay đổi
-    end
-})
-
--- Bật/tắt tốc độ
-local SpeedToggle = Tabs.Player:AddToggle("SpeedToggle", {
-    Title = "Enable Speed",
-    Default = false
-})
-
-SpeedToggle:OnChanged(function(Value)
-    speedEnabled = Value
-    updateCharacter() -- Cập nhật nhân vật ngay lập tức khi toggle thay đổi
-end)
-
--- Bật/tắt lực nhảy
-local JumpToggle = Tabs.Player:AddToggle("JumpToggle", {
-    Title = "Enable Jump Power",
-    Default = false
-})
-
-JumpToggle:OnChanged(function(Value)
-    jumpEnabled = Value
-    updateCharacter() -- Cập nhật nhân vật ngay lập tức khi toggle thay đổi
-end)
-
--- Cập nhật nhân vật khi hồi sinh
-LocalPlayer.CharacterAdded:Connect(function()
-    task.wait(1) -- Đợi nhân vật tải xong
-    updateCharacter()
-end)
-
--- Cập nhật ban đầu
-updateCharacter()
-
-local player = game.Players.LocalPlayer
-
-local function tweenCharacter(targetCFrame)
-    if player and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-        local hrp = player.Character.HumanoidRootPart
-        local tweenService = game:GetService("TweenService")
-        local tweenInfo = TweenInfo.new(3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-        local tween = tweenService:Create(hrp, tweenInfo, {CFrame = targetCFrame})
-        tween:Play()
-    end
-end
-
--- Thêm nút
-Tabs.tp:AddButton({
-    Title = "Tween to Dedu island",
-    Description = "Smoothly moves your character",
+InfoTab:AddButton({
+    Name = "Copy Discord Link",
     Callback = function()
-        tweenCharacter(CFrame.new(3859.06299, 60.1228409, 3081.9458, -0.987112403, 6.46206388e-07, -0.160028473, 5.63319077e-07, 1, 5.63319418e-07, 0.160028473, 4.65912507e-07, -0.987112403)) -- Thay đổi vị trí theo nhu cầu
-    end
+        setclipboard("https://discord.gg/W77Vj2HNBA")
+        OrionLib:MakeNotification({
+            Name = "Đã sao chép!",
+            Content = "Đường dẫn Discord đã được sao chép vào clipboard.",
+            Image = "rbxassetid://4483345998",
+            Time = 3
+        })
+    end    
 })
 
-
-
-local NoClipToggle = Tabs.Player:AddToggle("NoClipToggle", {
-    Title = "Enable NoClip",
-    Default = false
+-- MAIN Tab
+local MainTab = Window:MakeTab({
+    Name = "Main",
+    Icon = "rbxassetid://4483345998",
+    PremiumOnly = false
 })
 
--- Hàm NoClip
-local noclipEnabled = false
-NoClipToggle:OnChanged(function(Value)
-    noclipEnabled = Value
-    if noclipEnabled then
-        task.spawn(function()
-            while noclipEnabled do
-                for _, part in ipairs(game.Players.LocalPlayer.Character:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = false
-                    end
-                end
-                task.wait()
-            end
-        end)
-    else
-        for _, part in ipairs(game.Players.LocalPlayer.Character:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = true
-            end
+-- Dropdown để chọn World/Map
+local WorldDropdown = MainTab:AddDropdown({
+    Name = "Select World",
+    Default = ConfigSystem.CurrentConfig.SelectedWorld or "SoloWorld",
+    Options = {"SoloWorld", "NarutoWorld", "OPWorld", "BleachWorld", "BCWorld", "ChainsawWorld", "JojoWorld"},
+    Callback = function(value)
+        selectedWorld = value
+        ConfigSystem.CurrentConfig.SelectedWorld = value
+        
+        -- Cập nhật danh sách mob dựa trên world được chọn
+        local mobs = mobsByWorld[value] or {}
+        MobDropdown:Refresh(mobs, mobs[1] or "")
+        if #mobs > 0 then
+            selectedMobName = mobs[1]
+            ConfigSystem.CurrentConfig.SelectedMobName = selectedMobName
+        else
+            selectedMobName = ""
         end
-    end
-end)
+        
+        ConfigSystem.SaveConfig()
+        killedNPCs = {} -- Đặt lại danh sách NPC đã tiêu diệt khi thay đổi world
+    end    
+})
 
+-- Dropdown để chọn Mob trong world đã chọn
+local MobDropdown = MainTab:AddDropdown({
+    Name = "Select Enemy",
+    Default = "",
+    Options = mobsByWorld[selectedWorld] or {},
+    Callback = function(value)
+        selectedMobName = value
+        ConfigSystem.CurrentConfig.SelectedMobName = value
+        ConfigSystem.SaveConfig()
+        killedNPCs = {} -- Đặt lại danh sách NPC đã tiêu diệt khi thay đổi mob
+        print("Selected Mob:", selectedMobName) -- Gỡ lỗi
+    end    
+})
 
+MainTab:AddToggle({
+    Name = "Farm Selected Mob",
+    Default = ConfigSystem.CurrentConfig.FarmSelectedMob or false,
+    Callback = function(value)
+        teleportEnabled = value
+        damageEnabled = value -- Đảm bảo tính năng tấn công mobs được kích hoạt
+        ConfigSystem.CurrentConfig.FarmSelectedMob = value
+        ConfigSystem.SaveConfig()
+        killedNPCs = {} -- Đặt lại danh sách NPC đã tiêu diệt khi bắt đầu farm
+        if value then
+            task.spawn(teleportToSelectedEnemy)
+        end
+    end    
+})
 
-Tabs.Player:AddButton({
-    Title = "Server Hop",
-    Description = "Switches to a different server",
+MainTab:AddToggle({
+    Name = "Auto farm (nearest NPCs)",
+    Default = ConfigSystem.CurrentConfig.AutoFarmNearestNPCs or false,
+    Callback = function(value)
+        teleportEnabled = value
+        ConfigSystem.CurrentConfig.AutoFarmNearestNPCs = value
+        ConfigSystem.SaveConfig()
+        if value then
+            task.spawn(teleportAndTrackDeath)
+        end
+    end    
+})
+
+MainTab:AddDropdown({
+    Name = "Farming Method",
+    Default = ConfigSystem.CurrentConfig.FarmingMethod or "Tween",
+    Options = {"Tween", "Teleport"},
+    Callback = function(value)
+        movementMethod = value
+        ConfigSystem.CurrentConfig.FarmingMethod = value
+        ConfigSystem.SaveConfig()
+    end    
+})
+
+MainTab:AddToggle({
+    Name = "Damage Mobs ENABLE THIS",
+    Default = ConfigSystem.CurrentConfig.DamageMobs or false,
+    Callback = function(value)
+        damageEnabled = value
+        ConfigSystem.CurrentConfig.DamageMobs = value
+        ConfigSystem.SaveConfig()
+        if value then
+            task.spawn(attackEnemy)
+        end
+    end    
+})
+
+MainTab:AddToggle({
+    Name = "Gamepass Shadow farm",
+    Default = false,
+    Callback = function(value)
+        local attackatri = game:GetService("Players").LocalPlayer.Settings
+        local atri = attackatri:GetAttribute("AutoAttack")
+        
+        if value then
+            -- Bật tính năng
+            if atri == false then
+                attackatri:SetAttribute("AutoAttack", true)
+            end
+            print("Shadow farm đã bật")
+        else
+            -- Tắt tính năng
+            attackatri:SetAttribute("AutoAttack", false)
+            print("Shadow farm đã tắt")
+        end
+    end    
+})
+
+-- Auto Destroy/Arise Toggles
+MainTab:AddToggle({
+    Name = "Auto Destroy",
+    Default = ConfigSystem.CurrentConfig.MainAutoDestroy or false,
+    Callback = function(value)
+        autoDestroy = value
+        ConfigSystem.CurrentConfig.MainAutoDestroy = value
+        ConfigSystem.SaveConfig()
+        if value then
+            task.spawn(fireDestroy)
+        end
+    end    
+})
+
+MainTab:AddToggle({
+    Name = "Auto Arise",
+    Default = ConfigSystem.CurrentConfig.MainAutoArise or false,
+    Callback = function(value)
+        autoArise = value
+        ConfigSystem.CurrentConfig.MainAutoArise = value
+        ConfigSystem.SaveConfig()
+        if value then
+            task.spawn(fireArise)
+        end
+    end    
+})
+
+-- TELEPORTS Tab
+local TeleportsTab = Window:MakeTab({
+    Name = "Teleports",
+    Icon = "rbxassetid://4483345998",
+    PremiumOnly = false
+})
+
+TeleportsTab:AddButton({
+    Name = "Leveling City",
     Callback = function()
-        local PlaceID = game.PlaceId
-        local AllIDs = {}
-        local foundAnything = ""
-        local actualHour = os.date("!*t").hour
-        local File = pcall(function()
-            AllIDs = game:GetService('HttpService'):JSONDecode(readfile("NotSameServers.json"))
-        end)
-        if not File then
-            table.insert(AllIDs, actualHour)
-            writefile("NotSameServers.json", game:GetService('HttpService'):JSONEncode(AllIDs))
+        SetSpawnAndReset("SoloWorld")
+    end    
+})
+
+TeleportsTab:AddButton({
+    Name = "Grass Village",
+    Callback = function()
+        SetSpawnAndReset("NarutoWorld")
+    end    
+})
+
+TeleportsTab:AddButton({
+    Name = "Brum Island",
+    Callback = function()
+        SetSpawnAndReset("OPWorld")
+    end    
+})
+
+TeleportsTab:AddButton({
+    Name = "Faceheal Town",
+    Callback = function()
+        SetSpawnAndReset("BleachWorld")
+    end    
+})
+
+TeleportsTab:AddButton({
+    Name = "Lucky Kingdom",
+    Callback = function()
+        SetSpawnAndReset("BCWorld")
+    end    
+})
+
+TeleportsTab:AddButton({
+    Name = "Nipon City",
+    Callback = function()
+        SetSpawnAndReset("ChainsawWorld")
+    end    
+})
+
+TeleportsTab:AddButton({
+    Name = "Mori Town",
+    Callback = function()
+        SetSpawnAndReset("JojoWorld")
+    end    
+})
+
+-- DUNGEON Tab
+local DungeonTab = Window:MakeTab({
+    Name = "Dungeon",
+    Icon = "rbxassetid://4483345998",
+    PremiumOnly = false
+})
+
+DungeonTab:AddToggle({
+    Name = "Auto farm Dungeon",
+    Default = false,
+    Callback = function(value)
+        teleportEnabled = value
+        if value then
+            task.spawn(teleportDungeon)
         end
-        local function TPReturner()
-            local Site
-            if foundAnything == "" then
-                Site = game.HttpService:JSONDecode(game:HttpGet('https://games.roblox.com/v1/games/' .. PlaceID .. '/servers/Public?sortOrder=Asc&limit=100'))
-            else
-                Site = game.HttpService:JSONDecode(game:HttpGet('https://games.roblox.com/v1/games/' .. PlaceID .. '/servers/Public?sortOrder=Asc&limit=100&cursor=' .. foundAnything))
-            end
-            for _, v in pairs(Site.data) do
-                if tonumber(v.maxPlayers) > tonumber(v.playing) then
-                    local ID = tostring(v.id)
-                    local isNewServer = true
-                    for _, existing in pairs(AllIDs) do
-                        if ID == tostring(existing) then
-                            isNewServer = false
-                            break
+    end    
+})
+
+DungeonTab:AddToggle({
+    Name = "Auto Destroy",
+    Default = false,
+    Callback = function(value)
+        autoDestroy = value
+        if value then
+            task.spawn(fireDestroy)
+        end
+    end    
+})
+
+DungeonTab:AddToggle({
+    Name = "Auto Arise",
+    Default = false,
+    Callback = function(value)
+        autoArise = value
+        if value then
+            task.spawn(fireArise)
+        end
+    end    
+})
+
+DungeonTab:AddToggle({
+    Name = "Teleport to Dungeon",
+    Default = false,
+    Callback = function(value)
+        -- Teleport to Dungeon Logic
+        -- Implement your teleport dungeon function here
+    end    
+})
+
+DungeonTab:AddToggle({
+    Name = "Auto Detect Dungeon (KEEP THIS ON)",
+    Default = true,
+    Callback = function(value)
+        -- Auto Detect Dungeon Logic
+        if value then
+            player.PlayerGui.Warn.ChildAdded:Connect(function(dungeon)
+                if dungeon:IsA("Frame") and value then
+                    print("Đã phát hiện Dungeon!")
+                    for _, child in ipairs(dungeon:GetChildren()) do
+                        if child:IsA("TextLabel") then
+                            for village, spawnName in pairs({
+                                ["Grass Village"] = "NarutoWorld",
+                                ["BRUM ISLAND"] = "OPWorld",
+                                ["Leveling City"] = "SoloWorld",
+                                ["FACEHEAL TOWN"] = "BleachWorld",
+                                ["Lucky"] = "BCWorld",
+                                ["Nipon City"] = "ChainsawWorld",
+                                ["Mori Town"] = "JojoWorld",
+                            }) do
+                                if string.find(string.lower(child.Text), string.lower(village)) then
+                                    teleportEnabled = false
+                                    print("Đã phát hiện làng:", village)
+                                    SetSpawnAndReset(spawnName)
+                                    return
+                                end
+                            end
                         end
                     end
-                    if isNewServer then
-                        table.insert(AllIDs, ID)
-                        writefile("NotSameServers.json", game:GetService('HttpService'):JSONEncode(AllIDs))
-                        game:GetService("TeleportService"):TeleportToPlaceInstance(PlaceID, ID, game.Players.LocalPlayer)
-                        return
-                    end
                 end
-            end
+            end)
         end
-        TPReturner()
-    end
+    end    
 })
 
-
-
-    
-
-        
-Tabs.dungeon:AddToggle("AutoBuyDungeonTicket", {
-    Title = "Auto Buy Dungeon Ticket",
+DungeonTab:AddToggle({
+    Name = "Auto Enter Guild Dungeon",
     Default = false,
-    Callback = function(state)
-        buyTicketEnabled = state
-        print("[DEBUG] Auto Buy Dungeon Ticket toggled:", state)
-        
-        if state then
+    Callback = function(value)
+        if value then
             task.spawn(function()
-                while buyTicketEnabled do
+                while value do
+                    local args = {
+                        [1] = {
+                            [1] = {
+                                ["Event"] = "DungeonAction",
+                                ["Action"] = "TestEnter"
+                            },
+                            [2] = "\n"
+                        }
+                    }
+                    game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent"):FireServer(unpack(args))
+                    task.wait(0.5)
+                end
+            end)
+        end
+    end    
+})
+
+DungeonTab:AddToggle({
+    Name = "Auto Buy Dungeon Ticket",
+    Default = false,
+    Callback = function(value)
+        if value then
+            task.spawn(function()
+                while value do
                     local args = {
                         [1] = {
                             [1] = {
@@ -1745,471 +727,256 @@ Tabs.dungeon:AddToggle("AutoBuyDungeonTicket", {
                             [2] = "\n"
                         }
                     }
-
                     game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent"):FireServer(unpack(args))
-                    task.wait(5) -- Đợi 5 giây trước khi gửi lại
+                    task.wait(5)
                 end
             end)
         end
-    end
+    end    
 })
 
+-- PLAYER Tab
+local PlayerTab = Window:MakeTab({
+    Name = "Player",
+    Icon = "rbxassetid://4483345998",
+    PremiumOnly = false
+})
 
+local speedValue = 16
+local jumpValue = 50
+local speedEnabled = false
+local jumpEnabled = false
 
-    local localPlayer = game:GetService("Players").LocalPlayer
-local playerCharacter = localPlayer.Character or localPlayer.CharacterAdded:Wait()
-local playerHRP = playerCharacter:WaitForChild("HumanoidRootPart")
-local enemyContainer = workspace:WaitForChild("__Main"):WaitForChild("__Enemies"):WaitForChild("Client")
-local networkEvent = game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent")
-
-local autoFarmActive = false
-local defeatedEnemies = {}
-
-local function isTargetDefeated(target)
-    local healthUI = target:FindFirstChild("HealthBar")
-    if healthUI and healthUI:FindFirstChild("Main") and healthUI.Main:FindFirstChild("Bar") then
-        local healthText = healthUI.Main.Bar:FindFirstChild("Amount")
-        if healthText and healthText:IsA("TextLabel") and healthText.ContentText == "0 HP" then
-            return true
+PlayerTab:AddSlider({
+    Name = "Speed",
+    Min = 16,
+    Max = 200,
+    Default = 16,
+    Color = Color3.fromRGB(255,255,255),
+    Increment = 1,
+    ValueName = "",
+    Callback = function(value)
+        speedValue = value
+        if speedEnabled and game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChild("Humanoid") then
+            game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = value
         end
-    end
-    return false
-end
+    end    
+})
 
-local function findClosestTarget()
-    local closestJJ2, closestJJ3, closestJJ4 = nil, nil, nil
-    local distJJ2, distJJ3, distJJ4 = math.huge, math.huge, math.huge
-    local playerPos = localPlayer.Character and localPlayer.Character:GetPivot().Position
-
-    if not playerPos then return nil end
-
-    for _, enemy in ipairs(enemyContainer:GetChildren()) do
-        if enemy:IsA("Model") and enemy:FindFirstChild("HumanoidRootPart") then
-            local enemyType = enemy:GetAttribute("ID")
-            
-            -- Đảm bảo script bỏ qua các kẻ địch đã chết
-            if not defeatedEnemies[enemy.Name] then
-                local distance = (playerPos - enemy:GetPivot().Position).Magnitude
-                
-                if enemyType == "JJ2" and distance < distJJ2 then
-                    distJJ2 = distance
-                    closestJJ2 = enemy
-                elseif enemyType == "JJ3" and distance < distJJ3 then
-                    distJJ3 = distance
-                    closestJJ3 = enemy
-                elseif enemyType == "JJ4" and distance < distJJ4 then
-                    distJJ4 = distance
-                    closestJJ4 = enemy
-                end
-            end
+PlayerTab:AddSlider({
+    Name = "Jump Power",
+    Min = 50,
+    Max = 200,
+    Default = 50,
+    Color = Color3.fromRGB(255,255,255),
+    Increment = 1,
+    ValueName = "",
+    Callback = function(value)
+        jumpValue = value
+        if jumpEnabled and game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChild("Humanoid") then
+            game.Players.LocalPlayer.Character.Humanoid.JumpPower = value
         end
-    end
+    end    
+})
 
-    -- Ưu tiên: JJ2 > JJ3 > JJ4
-    return closestJJ2 or closestJJ3 or closestJJ4
-end
-
-local function triggerPetVisibility()
-    local arguments = {
-        [1] = {
-            [1] = {
-                ["Event"] = "ShowPets"
-            },
-            [2] = "\t"
-        }
-    }
-    game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent"):FireServer(unpack(arguments))
-end
-
-local function startAutoFarm()
-    if autoFarmActive then
-        local targetEnemy = findClosestTarget()
-        
-        if targetEnemy and targetEnemy.Parent then
-            local targetHRP = targetEnemy:FindFirstChild("HumanoidRootPart")
-            local playerHRP = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
-
-            if targetHRP and playerHRP then
-                -- Move to target enemy
-                playerHRP.CFrame = targetHRP.CFrame * CFrame.new(0, 0, 6)
-
-                task.delay(0.5, function()
-                    if not autoFarmActive then return end
-                    triggerPetVisibility()
-
-                    networkEvent:FireServer({
-                        {
-                            ["PetPos"] = {},
-                            ["AttackType"] = "All",
-                            ["Event"] = "Attack",
-                            ["Enemy"] = targetEnemy.Name
-                        },
-                        "\7"
-                    })
-                end)
-
-                -- Sử dụng connection để theo dõi trạng thái thay vì vòng lặp liên tục
-                local checkConnection
-                checkConnection = game:GetService("RunService").Heartbeat:Connect(function()
-                    if not autoFarmActive or not targetEnemy.Parent then
-                        checkConnection:Disconnect()
-                        task.delay(0.2, startAutoFarm)
-                        return
-                    end
-                    
-                    if isTargetDefeated(targetEnemy) then
-                        defeatedEnemies[targetEnemy.Name] = true
-                        checkConnection:Disconnect()
-                        task.delay(0.2, startAutoFarm)
-                    end
-                end)
-            else
-                task.delay(0.2, startAutoFarm)
-            end
-        else
-            task.delay(0.5, startAutoFarm)
-        end
-    end
-end
-
-Tabs.Main:AddToggle("AutoFarmToggle", {
-    Title = "auto Jeju farm",
+PlayerTab:AddToggle({
+    Name = "Enable Speed",
     Default = false,
-    Callback = function(state)
-        autoFarmActive = state
-        if state then
-            task.spawn(startAutoFarm)
+    Callback = function(value)
+        speedEnabled = value
+        if game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChild("Humanoid") then
+            game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = value and speedValue or 16
         end
-    end
+    end    
 })
 
-
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local LocalPlayer = Players.LocalPlayer
-local Inventory = LocalPlayer:FindFirstChild("leaderstats") and LocalPlayer.leaderstats:FindFirstChild("Inventory")
-
-
-
-
-
-local SelectedLevel = 1
-local SellingEnabled = false
-
--- Dropdown để chọn cấp độ vũ khí (đã chuyển sang tab Misc)
-local Dropdown = Tabs.misc:AddDropdown("WeaponLevel", {
-    Title = "Select Weapon Level",
-    Values = {"1", "2", "4", "5", "6", "7"},
-    Multi = false,
-    Default = "1",
+PlayerTab:AddToggle({
+    Name = "Enable Jump Power",
+    Default = false,
+    Callback = function(value)
+        jumpEnabled = value
+        if game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChild("Humanoid") then
+            game.Players.LocalPlayer.Character.Humanoid.JumpPower = value and jumpValue or 50
+        end
+    end    
 })
 
-Dropdown:OnChanged(function(Value)
-    SelectedLevel = tonumber(Value)
-end)
-
--- Bật/tắt tự động bán (đã chuyển sang tab Misc)
-local Toggle = Tabs.misc:AddToggle("AutoSell", { Title = "Auto-Sell Weapons", Default = false })
-
-Toggle:OnChanged(function(Value)
-    SellingEnabled = Value
-end)
-
--- Hàm để bán vũ khí dựa trên cấp độ đã chọn
-local function SellWeapons()
-    if not Inventory or not SellingEnabled then return end
-    
-    for _, weapon in ipairs(Inventory.Weapons:GetChildren()) do
-        local level = weapon:GetAttribute("Level")
-        if level == SelectedLevel then
-            local args = {
-                [1] = {
-                    [1] = {
-                        ["Action"] = "Sell",
-                        ["Event"] = "WeaponAction",
-                        ["Name"] = weapon.Name
-                    },
-                    [2] = "\n"
-                }
-            }
-            ReplicatedStorage:WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent"):FireServer(unpack(args))
+PlayerTab:AddToggle({
+    Name = "Anti AFK",
+    Default = false,
+    Callback = function(value)
+        if value then
+            local VirtualUser = game:GetService("VirtualUser")
+            local antiAfkConnection
             
-        end
-    end
-end
-
--- Vòng lặp liên tục kiểm tra vũ khí để bán
-task.spawn(function()
-    while task.wait(0.5) do
-        if SellingEnabled then
-            SellWeapons()
-        end
-    end
-end)
-
-
-local AutoEnterDungeon = Tabs.dungeon:AddToggle("AutoEnterDungeon", { Title = "Auto Enter Guild Dungeon", Default = false })
-
-local function EnterDungeon()
-    while AutoEnterDungeon.Value do
-        local args = {
-            [1] = {
-                [1] = {
-                    ["Event"] = "DungeonAction",
-                    ["Action"] = "TestEnter"
-                },
-                [2] = "\n"
-            }
-        }
-
-        game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent"):FireServer(unpack(args))
-        task.wait(0.5) -- Điều chỉnh độ trễ nếu cần
-    end
-end
-
-AutoEnterDungeon:OnChanged(function(Value)
-    if Value then
-        task.spawn(EnterDungeon) -- Start loop when enabled
-    end
-end)
-
-Tabs.Discord:AddParagraph({
-    Title = "🎉 Chào mừng đến với Etherbyte Hub Premium!",
-    Content = "Mở khóa trải nghiệm tốt nhất với các tính năng cao cấp của chúng tôi!\n\n" ..
-              "✅ **Vượt qua Anti-Cheat nâng cao** – Luôn an toàn và không bị phát hiện.\n" ..
-              "⚡ **Thực thi nhanh hơn & Tối ưu hóa** – Tận hưởng gameplay mượt mà hơn.\n" ..
-              "🔄 **Cập nhật độc quyền** – Tiếp cận sớm các tính năng mới.\n" ..
-              "🎁 **Hỗ trợ & Cộng đồng cao cấp** – Kết nối với các người dùng ưu tú khác.\n\n" ..
-              "Nâng cấp ngay và nâng cao trải nghiệm chơi game của bạn!"
-})
-
-Tabs.Discord:AddButton({
-    Title = "Copy Discord Link",
-    Description = "Copies the Discord invite link to clipboard",
-    Callback = function()
-        setclipboard("https://discord.gg/W77Vj2HNBA")
-        Fluent:Notify({
-            Title = "Đã sao chép!",
-            Content = "Đường dẫn Discord đã được sao chép vào clipboard.",
-            Duration = 3
-        })
-    end
-})
-
-
-SaveManager:SetLibrary(Fluent)
-InterfaceManager:SetLibrary(Fluent)
-
--- Thay đổi cách lưu cấu hình để sử dụng tên người chơi
-local playerName = game:GetService("Players").LocalPlayer.Name
-InterfaceManager:SetFolder("KaihonScriptHub")
-SaveManager:SetFolder("KaihonScriptHub/AriseCrossover/" .. playerName)
-
--- Xóa đoạn xây dựng phần cấu hình trong Settings tab
--- InterfaceManager:BuildInterfaceSection(Tabs.Settings)
--- SaveManager:BuildConfigSection(Tabs.Settings)
-
--- Thêm thông tin vào tab Settings
-Tabs.Settings:AddParagraph({
-    Title = "Cấu hình tự động",
-    Content = "Cấu hình của bạn đang được tự động lưu theo tên nhân vật: " .. playerName
-})
-
-Tabs.Settings:AddParagraph({
-    Title = "Phím tắt",
-    Content = "Nhấn LeftControl để ẩn/hiện giao diện"
-})
-
--- Thêm nút xóa cấu hình hiện tại
-Tabs.Settings:AddButton({
-    Title = "Xóa cấu hình hiện tại",
-    Description = "Đặt lại tất cả cài đặt về mặc định",
-    Callback = function()
-        SaveManager:Delete("AutoSave_" .. playerName)
-        Fluent:Notify({
-            Title = "Đã xóa cấu hình",
-            Content = "Tất cả cài đặt đã được đặt lại về mặc định",
-            Duration = 3
-        })
-    end
-})
-
-Window:SelectTab(1)
-
-Fluent:Notify({
-    Title = "Kaihon Hub",
-    Content = "Script đã tải xong! Cấu hình tự động lưu theo tên người chơi: " .. playerName,
-    Duration = 3
-})
-
--- Thay đổi cách tải cấu hình
-local function AutoSaveConfig()
-    local configName = "AutoSave_" .. playerName
-    
-    -- Tự động lưu cấu hình hiện tại
-    task.spawn(function()
-        while task.wait(5) do -- Lưu mỗi 5 giây
-            pcall(function()
-                SaveManager:Save(configName)
+            antiAfkConnection = game:GetService("Players").LocalPlayer.Idled:Connect(function()
+                VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+                task.wait(1)
+                VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
             end)
         end
-    end)
-    
-    -- Tải cấu hình đã lưu nếu có
-    pcall(function()
-        SaveManager:Load(configName)
-    end)
-end
+    end    
+})
 
--- Thực thi tự động lưu/tải cấu hình
-AutoSaveConfig()
-
--- Thêm hỗ trợ Mobile UI
-repeat task.wait(0.25) until game:IsLoaded()
-getgenv().Image = "rbxassetid://13099788281" -- ID tài nguyên hình ảnh đã sửa
-getgenv().ToggleUI = "LeftControl" -- Phím để bật/tắt giao diện
-
--- Tạo giao diện mobile cho người dùng điện thoại
-task.spawn(function()
-    local success, errorMsg = pcall(function()
-        if not getgenv().LoadedMobileUI == true then 
-            getgenv().LoadedMobileUI = true
-            local OpenUI = Instance.new("ScreenGui")
-            local ImageButton = Instance.new("ImageButton")
-            local UICorner = Instance.new("UICorner")
-            
-            -- Kiểm tra thiết bị
-            if syn and syn.protect_gui then
-                syn.protect_gui(OpenUI)
-                OpenUI.Parent = game:GetService("CoreGui")
-            elseif gethui then
-                OpenUI.Parent = gethui()
-            else
-                OpenUI.Parent = game:GetService("CoreGui")
-            end
-            
-            OpenUI.Name = "OpenUI"
-            OpenUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-            
-            ImageButton.Parent = OpenUI
-            ImageButton.BackgroundColor3 = Color3.fromRGB(105,105,105)
-            ImageButton.BackgroundTransparency = 0.8
-            ImageButton.Position = UDim2.new(0.9,0,0.1,0)
-            ImageButton.Size = UDim2.new(0,50,0,50)
-            ImageButton.Image = getgenv().Image
-            ImageButton.Draggable = true
-            ImageButton.Transparency = 0.2
-            
-            UICorner.CornerRadius = UDim.new(0,200)
-            UICorner.Parent = ImageButton
-            
-            ImageButton.MouseButton1Click:Connect(function()
-                game:GetService("VirtualInputManager"):SendKeyEvent(true,getgenv().ToggleUI,false,game)
-            end)
-        end
-    end)
-    
-    if not success then
-        warn("Lỗi khi tạo nút Mobile UI: " .. tostring(errorMsg))
-    end
-end)
-
--- Kiểm tra script đã tải thành công
-local scriptSuccess, scriptError = pcall(function()
-    Fluent:Notify({
-        Title = "Script đã khởi động thành công",
-        Content = "Kaihon Hub | Arise Crossover đang hoạt động",
-        Duration = 5
-    })
-end)
-
-if not scriptSuccess then
-    warn("Lỗi khi khởi động script: " .. tostring(scriptError))
-    -- Thử cách khác để thông báo người dùng
-    if game:GetService("Players").LocalPlayer and game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui") then
-        local screenGui = Instance.new("ScreenGui")
-        screenGui.Parent = game:GetService("Players").LocalPlayer.PlayerGui
-        
-        local textLabel = Instance.new("TextLabel")
-        textLabel.Size = UDim2.new(0.3, 0, 0.1, 0)
-        textLabel.Position = UDim2.new(0.35, 0, 0.45, 0)
-        textLabel.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-        textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-        textLabel.Text = "Kaihon Hub đã khởi động nhưng gặp lỗi. Hãy thử lại."
-        textLabel.Parent = screenGui
-        
-        local uiCorner = Instance.new("UICorner")
-        uiCorner.CornerRadius = UDim.new(0, 8)
-        uiCorner.Parent = textLabel
-        
-        game:GetService("Debris"):AddItem(screenGui, 5)
-    end
-end
-
--- Thêm event listener để lưu ngay khi thay đổi giá trị
-local function setupSaveEvents()
-    for _, tab in pairs(Tabs) do
-        for _, element in pairs(tab._components) do
-            if element.OnChanged then
-                element.OnChanged:Connect(function()
-                    pcall(function()
-                        SaveManager:Save("AutoSave_" .. playerName)
-                    end)
-                end)
-            end
-        end
-    end
-end
-
--- Thực thi tự động lưu/tải cấu hình
-AutoSaveConfig()
-setupSaveEvents() -- Thêm dòng này
-
--- Cải thiện cách lưu cấu hình
-local function optimizedSaveConfig()
-    local configName = "AutoSave_" .. playerName
-    local lastSaveTime = 0
-    
-    -- Gắn sự kiện để lưu khi có thay đổi, nhưng hạn chế tần suất lưu
-    local function setupOptimizedSaveEvents()
-        for _, tab in pairs(Tabs) do
-            for _, element in pairs(tab._components) do
-                if element.OnChanged then
-                    element.OnChanged:Connect(function()
-                        local currentTime = tick()
-                        if currentTime - lastSaveTime > 2 then -- Lưu tối đa mỗi 2 giây
-                            lastSaveTime = currentTime
-                            pcall(function()
-                                SaveManager:Save(configName)
-                            end)
+PlayerTab:AddToggle({
+    Name = "Enable NoClip",
+    Default = false,
+    Callback = function(value)
+        if value then
+            task.spawn(function()
+                while value do
+                    for _, part in ipairs(game.Players.LocalPlayer.Character:GetDescendants()) do
+                        if part:IsA("BasePart") then
+                            part.CanCollide = false
                         end
-                    end)
+                    end
+                    task.wait()
+                end
+            end)
+        else
+            for _, part in ipairs(game.Players.LocalPlayer.Character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = true
                 end
             end
         end
-    end
-    
-    -- Tự động lưu cấu hình hiện tại theo thời gian
-    task.spawn(function()
-        while task.wait(60) do -- Lưu mỗi 60 giây thay vì 5 giây
-            pcall(function()
-                SaveManager:Save(configName)
-            end)
+    end    
+})
+
+PlayerTab:AddButton({
+    Name = "Boost FPS",
+    Callback = function()
+        local Optimizer = {Enabled = true}
+
+        -- Disable Effects
+        for _, v in pairs(game:GetDescendants()) do
+            if v:IsA("ParticleEmitter") or v:IsA("Smoke") or v:IsA("Fire") or v:IsA("Sparkles") then
+                v.Enabled = false
+            end
+            if v:IsA("PostEffect") or v:IsA("BloomEffect") or v:IsA("BlurEffect") or v:IsA("SunRaysEffect") then
+                v.Enabled = false
+            end
         end
-    end)
-    
-    -- Tải cấu hình đã lưu khi khởi động
-    pcall(function()
-        SaveManager:Load(configName)
-    end)
-    
-    task.delay(1, setupOptimizedSaveEvents) -- Đợi UI được khởi tạo hoàn chỉnh
-end
 
--- Sử dụng hàm lưu cấu hình đã tối ưu
-optimizedSaveConfig()
+        -- Maximize Performance
+        local lighting = game:GetService("Lighting")
+        lighting.GlobalShadows = false
+        lighting.FogEnd = 9e9
+        lighting.Brightness = 2
+        settings().Rendering.QualityLevel = 1
+        settings().Physics.PhysicsEnvironmentalThrottle = 1
+        settings().Rendering.MeshPartDetailLevel = Enum.MeshPartDetailLevel.Level01
+        settings().Physics.AllowSleep = true
+        settings().Physics.ForceCSGv2 = false
+        settings().Physics.DisableCSGv2 = true
+        settings().Rendering.EagerBulkExecution = true
 
+        game:GetService("StarterGui"):SetCore("TopbarEnabled", false)
 
+        -- Optimize Instances
+        for _, v in pairs(game:GetDescendants()) do
+            if v:IsA("BasePart") then
+                v.CastShadow = false
+                v.Reflectance = 0
+                v.Material = Enum.Material.SmoothPlastic
+            end
+            if v:IsA("Decal") or v:IsA("Texture") then
+                v.Transparency = 1
+            end
+            if v:IsA("MeshPart") then
+                v.RenderFidelity = Enum.RenderFidelity.Performance
+            end
+        end
 
+        -- Clean Memory
+        game:GetService("Debris"):SetAutoCleanupEnabled(true)
+        settings().Physics.ThrottleAdjustTime = 2
+        game:GetService("RunService"):Set3dRenderingEnabled(false)
+        task.wait(0.1)
+        game:GetService("RunService"):Set3dRenderingEnabled(true)
+        
+        OrionLib:MakeNotification({
+            Name = "FPS Boost",
+            Content = "FPS Boosting has been applied!",
+            Image = "rbxassetid://4483345998",
+            Time = 5
+        })
+    end    
+})
 
+PlayerTab:AddButton({
+    Name = "Server Hop",
+    Callback = function()
+        local PlaceID = game.PlaceId
+        local AllIDs = {}
+        local foundAnything = ""
+        local actualHour = os.date("!*t").hour
+        
+        local Site = game.HttpService:JSONDecode(game:HttpGet('https://games.roblox.com/v1/games/' .. PlaceID .. '/servers/Public?sortOrder=Asc&limit=100'))
+        for _, v in pairs(Site.data) do
+            if tonumber(v.maxPlayers) > tonumber(v.playing) then
+                local ID = tostring(v.id)
+                game:GetService("TeleportService"):TeleportToPlaceInstance(PlaceID, ID, game.Players.LocalPlayer)
+                break
+            end
+        end
+    end    
+})
 
+-- Tự động reset farm
+task.spawn(function()
+    while true do
+        task.wait(120) -- Đợi 120 giây
+        killedNPCs = {} -- Đặt lại số lượng NPC đã tiêu diệt
+        print("AutoFarm đã được đặt lại!")
+    end
+end)
+
+-- Notification khi khởi động
+OrionLib:MakeNotification({
+    Name = "Kaihon Hub",
+    Content = "Script đã tải xong! Phiên bản tối ưu hiệu suất.",
+    Image = "rbxassetid://4483345998",
+    Time = 5
+})
+
+-- Mobile UI Support
+task.spawn(function()
+    if not getgenv().LoadedMobileUI then
+        getgenv().LoadedMobileUI = true
+        local OpenUI = Instance.new("ScreenGui")
+        local ImageButton = Instance.new("ImageButton")
+        local UICorner = Instance.new("UICorner")
+        
+        -- Check device
+        if syn and syn.protect_gui then
+            syn.protect_gui(OpenUI)
+            OpenUI.Parent = game:GetService("CoreGui")
+        elseif gethui then
+            OpenUI.Parent = gethui()
+        else
+            OpenUI.Parent = game:GetService("CoreGui")
+        end
+        
+        OpenUI.Name = "OpenUI"
+        OpenUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+        
+        ImageButton.Parent = OpenUI
+        ImageButton.BackgroundColor3 = Color3.fromRGB(105,105,105)
+        ImageButton.BackgroundTransparency = 0.8
+        ImageButton.Position = UDim2.new(0.9,0,0.1,0)
+        ImageButton.Size = UDim2.new(0,50,0,50)
+        ImageButton.Image = "rbxassetid://13099788281"
+        ImageButton.Draggable = true
+        ImageButton.Transparency = 0.2
+        
+        UICorner.CornerRadius = UDim.new(0,200)
+        UICorner.Parent = ImageButton
+        
+        ImageButton.MouseButton1Click:Connect(function()
+            OrionLib:ToggleUI()
+        end)
+    end
+end)
+
+OrionLib:Init() 
