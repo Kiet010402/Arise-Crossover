@@ -1766,11 +1766,13 @@ ConfigSystem.DefaultConfig.AutoScanEnabled = autoScanEnabled
 ConfigSystem.DefaultConfig.ScanDelay = scanDelay
 
 -- Slider để điều chỉnh Scan Delay
-Tabs.Buy:AddSlider("ScanDelaySlider", {
+Tabs.Update:AddSlider("ScanDelaySlider", {
     Title = "Scan Delay",
     Min = 0.1,
     Max = 5,
     Default = ConfigSystem.CurrentConfig.ScanDelay or scanDelay,
+    Increment = 0.1, -- Thêm tham số Increment
+    Rounding = 1, -- Thêm tham số Rounding (làm tròn đến 1 chữ số thập phân)
     Description = "Adjust the delay between scans (seconds)",
     Suffix = "s",
     Callback = function(value)
