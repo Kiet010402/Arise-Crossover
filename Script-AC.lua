@@ -31,7 +31,10 @@ ConfigSystem.DefaultConfig = {
     SelectedWeapon = "",
     AutoBuyEnabled = false,
     AutoScanEnabled = false,
-    ScanDelay = 1
+    ScanDelay = 1,
+    UpdateWeaponType = "",  -- Thêm các giá trị mặc định mới
+    UpdateWeaponLevel = 2,
+    AutoUpdateEnabled = false
 }
 ConfigSystem.CurrentConfig = {}
 
@@ -1625,13 +1628,13 @@ end
 local function setupSaveEvents()
     for _, tab in pairs(Tabs) do
         if tab and tab._components then -- Kiểm tra tab và tab._components có tồn tại không
-            for _, element in pairs(tab._components) do
+        for _, element in pairs(tab._components) do
                 if element and element.OnChanged then -- Kiểm tra element và element.OnChanged có tồn tại không
-                    element.OnChanged:Connect(function()
-                        pcall(function()
-                            SaveManager:Save("AutoSave_" .. playerName)
-                        end)
+                element.OnChanged:Connect(function()
+                    pcall(function()
+                        SaveManager:Save("AutoSave_" .. playerName)
                     end)
+                end)
                 end
             end
         end
@@ -1662,6 +1665,11 @@ local autoBuyEnabled = false -- Trạng thái Auto Buy
 ConfigSystem.DefaultConfig.SelectedShop = selectedShop
 ConfigSystem.DefaultConfig.SelectedWeapon = selectedWeapon
 ConfigSystem.DefaultConfig.AutoBuyEnabled = autoBuyEnabled
+
+-- Thêm section Buy Weapons
+Tabs.Buy:AddSection({
+    Title = "Buy Weapons"
+})
 
 -- Dropdown để chọn Shop
 Tabs.Buy:AddDropdown("ShopDropdown", {
@@ -1756,6 +1764,11 @@ Tabs.Buy:AddButton({
     end
 })
 
+-- Thêm section Auto Scan
+Tabs.Buy:AddSection({
+    Title = "Auto Scan"
+})
+
 -- Thêm chức năng Auto Scan Weapon
 local autoScanEnabled = false
 local scanDelay = 1 -- Độ trễ giữa các lần quét (giây)
@@ -1770,6 +1783,7 @@ Tabs.Buy:AddSlider("ScanDelaySlider", {
     Min = 0.1,
     Max = 5,
     Default = ConfigSystem.CurrentConfig.ScanDelay or scanDelay,
+    Rounding = 1,
     Description = "Adjust the delay between scans (seconds)",
     Suffix = "s",
     Callback = function(value)
@@ -1830,8 +1844,10 @@ Tabs.Buy:AddToggle("AutoScanToggle", {
     end
 })
 
--- Thêm section Update Weapons trong tab Buy
-Tabs.Buy:AddParagraph("Update Weapons", "Nâng cấp vũ khí từ inventory của bạn")
+-- Thêm section Update Weapons
+Tabs.Buy:AddSection({
+    Title = "Update Weapons"
+})
 
 -- Dropdown để chọn loại vũ khí cần update
 local updateWeaponType = ""
