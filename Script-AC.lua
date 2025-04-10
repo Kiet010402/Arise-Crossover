@@ -1876,10 +1876,12 @@ end
 local weaponTypes = getUniqueWeaponNames()
 local selectedWeaponType = weaponTypes[1] or "" -- Loại vũ khí mặc định
 local autoUpdateEnabled = false -- Trạng thái Auto Update
+local autoUpdateSelectedEnabled = false -- Trạng thái Auto Update cho vũ khí đã chọn
 
 -- Cập nhật ConfigSystem
 ConfigSystem.DefaultConfig.SelectedWeaponType = selectedWeaponType
 ConfigSystem.DefaultConfig.AutoUpdateEnabled = autoUpdateEnabled
+ConfigSystem.DefaultConfig.AutoUpdateSelectedEnabled = autoUpdateSelectedEnabled
 
 -- Dropdown để chọn loại vũ khí muốn nâng cấp
 Tabs.Update:AddDropdown("WeaponTypeDropdown", {
@@ -1895,7 +1897,88 @@ Tabs.Update:AddDropdown("WeaponTypeDropdown", {
     end
 })
 
--- Xóa dropdown chọn level vì không cần nữa
+-- Thêm Toggle thay vì Button cho Upgrade Selected Weapon
+Tabs.Update:AddToggle("AutoUpdateSelectedToggle", {
+    Title = "Auto Upgrade Selected Weapon",
+    Default = ConfigSystem.CurrentConfig.AutoUpdateSelectedEnabled or false,
+    Callback = function(state)
+        autoUpdateSelectedEnabled = state
+        ConfigSystem.CurrentConfig.AutoUpdateSelectedEnabled = state
+        ConfigSystem.SaveConfig()
+        
+        if state then
+            if not selectedWeaponType or selectedWeaponType == "" then
+                Fluent:Notify({
+                    Title = "Lỗi",
+                    Content = "Vui lòng chọn loại vũ khí trước khi nâng cấp",
+                    Duration = 3
+                })
+                return
+            end
+            
+            -- Bắt đầu vòng lặp nâng cấp
+            task.spawn(function()
+                while autoUpdateSelectedEnabled do
+                    local upgraded = upgradeWeaponsByLevel(selectedWeaponType)
+                    if not upgraded then
+                        task.wait(5) -- Đợi lâu hơn nếu không có vũ khí nào được nâng cấp
+                    else
+                        task.wait(1) -- Đợi ngắn hơn nếu có vũ khí được nâng cấp
+                    end
+                end
+            end)
+        end
+    end
+})
+
+-- Nút để làm mới danh sách vũ khí (giữ nguyên)
+Tabs.Update:AddButton({
+    Title = "Refresh Weapon List",
+    Description = "Refresh the list of available weapons",
+    Callback = function()
+        weaponTypes = getUniqueWeaponNames()
+        local weaponTypeDropdown = Fluent.Options.WeaponTypeDropdown
+        if weaponTypeDropdown then
+            weaponTypeDropdown:SetValues(weaponTypes)
+            if #weaponTypes > 0 and not table.find(weaponTypes, selectedWeaponType) then
+                selectedWeaponType = weaponTypes[1]
+                weaponTypeDropdown:SetValue(selectedWeaponType)
+                ConfigSystem.CurrentConfig.SelectedWeaponType = selectedWeaponType
+                ConfigSystem.SaveConfig()
+            end
+        end
+        
+        Fluent:Notify({
+            Title = "Danh sách đã làm mới",
+            Content = "Đã cập nhật danh sách vũ khí có sẵn",
+            Duration = 3
+        })
+    end
+})
+
+-- Toggle để bật/tắt Auto Update All Weapons
+Tabs.Update:AddToggle("AutoUpdateAllToggle", {
+    Title = "Auto Update All Weapons",
+    Default = ConfigSystem.CurrentConfig.AutoUpdateEnabled or false,
+    Callback = function(state)
+        autoUpdateEnabled = state
+        ConfigSystem.CurrentConfig.AutoUpdateEnabled = state
+        ConfigSystem.SaveConfig()
+        
+        if state then
+            task.spawn(function()
+                while autoUpdateEnabled do
+                    local upgraded = upgradeWeaponsByLevel("")
+                    if not upgraded then
+                        task.wait(5) -- Đợi lâu hơn nếu không có vũ khí nào được nâng cấp
+                    else
+                        task.wait(1) -- Đợi ngắn hơn nếu có vũ khí được nâng cấp
+                    end
+                end
+            end)
+        end
+    end
+})
 
 -- Hàm để lấy tất cả vũ khí theo level
 local function getWeaponsByLevel(weaponType)
@@ -1984,85 +2067,6 @@ local function upgradeWeaponsByLevel(weaponType)
     
     return anyUpgraded
 end
-
--- Nút để làm mới danh sách vũ khí
-Tabs.Update:AddButton({
-    Title = "Refresh Weapon List",
-    Description = "Refresh the list of available weapons",
-    Callback = function()
-        weaponTypes = getUniqueWeaponNames()
-        local weaponTypeDropdown = Fluent.Options.WeaponTypeDropdown
-        if weaponTypeDropdown then
-            weaponTypeDropdown:SetValues(weaponTypes)
-            if #weaponTypes > 0 and not table.find(weaponTypes, selectedWeaponType) then
-                selectedWeaponType = weaponTypes[1]
-                weaponTypeDropdown:SetValue(selectedWeaponType)
-                ConfigSystem.CurrentConfig.SelectedWeaponType = selectedWeaponType
-                ConfigSystem.SaveConfig()
-            end
-        end
-        
-        Fluent:Notify({
-            Title = "Danh sách đã làm mới",
-            Content = "Đã cập nhật danh sách vũ khí có sẵn",
-            Duration = 3
-        })
-    end
-})
-
--- Nút để nâng cấp ngay
-Tabs.Update:AddButton({
-    Title = "Upgrade Selected Weapon",
-    Description = "Upgrade all weapons of selected type",
-    Callback = function()
-        upgradeWeaponsByLevel(selectedWeaponType)
-    end
-})
-
--- Nút để nâng cấp tất cả vũ khí
-Tabs.Update:AddButton({
-    Title = "Upgrade All Weapons",
-    Description = "Upgrade all weapons in inventory",
-    Callback = function()
-        upgradeWeaponsByLevel("")
-    end
-})
-
--- Toggle để bật/tắt Auto Update
-Tabs.Update:AddToggle("AutoUpdateToggle", {
-    Title = "Auto Update All Weapons",
-    Default = ConfigSystem.CurrentConfig.AutoUpdateEnabled or false,
-    Callback = function(state)
-        autoUpdateEnabled = state
-        ConfigSystem.CurrentConfig.AutoUpdateEnabled = state
-        ConfigSystem.SaveConfig()
-        
-        if state then
-            task.spawn(function()
-                while autoUpdateEnabled do
-                    local upgraded = upgradeWeaponsByLevel("")
-                    if not upgraded then
-                        task.wait(5) -- Đợi lâu hơn nếu không có vũ khí nào được nâng cấp
-                    else
-                        task.wait(1) -- Đợi ngắn hơn nếu có vũ khí được nâng cấp
-                    end
-                end
-            end)
-        end
-    end
-})
-
--- Thông tin về cách sử dụng
-Tabs.Update:AddParagraph({
-    Title = "Hướng dẫn sử dụng",
-    Content = "1. Chọn loại vũ khí muốn nâng cấp từ dropdown hoặc để trống để nâng cấp tất cả\n" ..
-              "2. Nhấn 'Upgrade Selected Weapon' để nâng cấp vũ khí đã chọn\n" ..
-              "3. Nhấn 'Upgrade All Weapons' để nâng cấp tất cả vũ khí\n" ..
-              "4. Bật 'Auto Update All Weapons' để tự động nâng cấp tất cả vũ khí\n" ..
-              "5. Nếu không thấy vũ khí mới, hãy nhấn 'Refresh Weapon List'"
-})
-
-
 
 
 
