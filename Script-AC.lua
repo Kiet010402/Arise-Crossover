@@ -1830,6 +1830,140 @@ Tabs.Buy:AddToggle("AutoScanToggle", {
     end
 })
 
+-- Thêm section Update Weapons trong tab Buy
+Tabs.Buy:AddParagraph("Update Weapons", "Nâng cấp vũ khí từ inventory của bạn")
+
+-- Dropdown để chọn loại vũ khí cần update
+local updateWeaponType = ""
+local updateWeaponLevel = 2
+local autoUpdateEnabled = false
+
+-- Thêm dropdown để chọn loại vũ khí cần update (giống loại trong weaponsByShop)
+local allWeaponTypes = {}
+for _, weapons in pairs(weaponsByShop) do
+    for _, weapon in ipairs(weapons) do
+        if not table.find(allWeaponTypes, weapon) then
+            table.insert(allWeaponTypes, weapon)
+        end
+    end
+end
+
+table.sort(allWeaponTypes) -- Sắp xếp bảng chữ cái
+
+-- Dropdown chọn loại vũ khí cần update
+Tabs.Buy:AddDropdown("UpdateWeaponType", {
+    Title = "Select Update Type",
+    Values = allWeaponTypes,
+    Multi = false,
+    Default = updateWeaponType,
+    Callback = function(weaponType)
+        updateWeaponType = weaponType
+        ConfigSystem.CurrentConfig.UpdateWeaponType = weaponType
+        ConfigSystem.SaveConfig()
+        print("Selected Update Type:", updateWeaponType)
+    end
+})
+
+-- Dropdown chọn level upgrade
+Tabs.Buy:AddDropdown("UpdateLevel", {
+    Title = "Select Upgrade Level",
+    Values = {"2", "3", "4", "5", "6", "7"},
+    Multi = false,
+    Default = "2",
+    Callback = function(level)
+        updateWeaponLevel = tonumber(level)
+        ConfigSystem.CurrentConfig.UpdateWeaponLevel = updateWeaponLevel
+        ConfigSystem.SaveConfig()
+        print("Selected Upgrade Level:", updateWeaponLevel)
+    end
+})
+
+-- Hàm để lấy danh sách ID của tất cả vũ khí thuộc loại đã chọn từ inventory
+local function getWeaponIDsForType(weaponType)
+    local weaponIDs = {}
+    local player = game:GetService("Players").LocalPlayer
+    local inventory = player.leaderstats and player.leaderstats.Inventory
+    local weapons = inventory and inventory:FindFirstChild("Weapons")
+    
+    if not weapons then
+        print("Không thể tìm thấy inventory weapons!")
+        return weaponIDs
+    end
+    
+    -- Kiểm tra mỗi vũ khí trong inventory
+    for _, weapon in ipairs(weapons:GetChildren()) do
+        local name = weapon:GetAttribute("Name") or ""
+        
+        -- Nếu tên vũ khí khớp với loại đã chọn
+        if name == weaponType then
+            table.insert(weaponIDs, weapon.Name)
+            print("Đã tìm thấy vũ khí:", weapon.Name)
+        end
+    end
+    
+    return weaponIDs
+end
+
+-- Hàm để upgrade vũ khí
+local function upgradeWeapons()
+    if updateWeaponType == "" then
+        print("Vui lòng chọn loại vũ khí!")
+        return
+    end
+    
+    local weaponIDs = getWeaponIDsForType(updateWeaponType)
+    
+    if #weaponIDs == 0 then
+        print("Không tìm thấy vũ khí nào thuộc loại:", updateWeaponType)
+        return
+    end
+    
+    local args = {
+        [1] = {
+            [1] = {
+                ["Type"] = updateWeaponType,
+                ["BuyType"] = "Gems",
+                ["Weapons"] = weaponIDs,
+                ["Event"] = "UpgradeWeapon",
+                ["Level"] = updateWeaponLevel
+            },
+            [2] = "\n"
+        }
+    }
+    
+    game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent"):FireServer(unpack(args))
+    print("Đã gửi yêu cầu upgrade vũ khí:", updateWeaponType, "lên level", updateWeaponLevel)
+end
+
+-- Nút upgrade ngay
+Tabs.Buy:AddButton({
+    Title = "Upgrade Now",
+    Description = "Nâng cấp vũ khí đã chọn ngay lập tức",
+    Callback = function()
+        upgradeWeapons()
+    end
+})
+
+-- Toggle auto upgrade
+Tabs.Buy:AddToggle("AutoUpgradeToggle", {
+    Title = "Auto Upgrade Weapons",
+    Default = ConfigSystem.CurrentConfig.AutoUpdateEnabled or false,
+    Callback = function(state)
+        autoUpdateEnabled = state
+        ConfigSystem.CurrentConfig.AutoUpdateEnabled = state
+        ConfigSystem.SaveConfig()
+        
+        if state then
+            task.spawn(function()
+                while autoUpdateEnabled do
+                    upgradeWeapons()
+                    task.wait(1) -- Chờ 1 giây giữa mỗi lần upgrade
+                end
+            end)
+        end
+    end
+})
+
 
 
 
