@@ -31,7 +31,9 @@ ConfigSystem.DefaultConfig = {
     SelectedWeapon = "",
     AutoBuyEnabled = false,
     AutoScanEnabled = false,
-    ScanDelay = 1
+    ScanDelay = 1,
+    SelectedRanks = {},
+    AutoSellEnabled = false
 }
 ConfigSystem.CurrentConfig = {}
 
@@ -329,6 +331,7 @@ local Tabs = {
     dungeon = Window:AddTab({ Title = "Dungeon ", Icon = "" }),
     Buy = Window:AddTab({ Title = "Buy", Icon = "" }),
     Update = Window:AddTab({ Title = "Update", Icon = "" }),
+    Sell = Window:AddTab({ Title = "Sell", Icon = "" }),
     Player = Window:AddTab({ Title = "Player", Icon = "" }),
     Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
 }
@@ -674,9 +677,6 @@ local function fireArise()
         end
     end
 end
-
-
-
 
 
 -- Auto Destroy Toggle
@@ -2040,5 +2040,105 @@ Tabs.Update:AddToggle("AutoSelectToggle", {
                 end
             end)
         end
+    end
+})
+
+-- Thêm code cho tab Sell sau phần mã của tab Update
+local rankMapping = {
+    [1] = "E",
+    [2] = "D",
+    [3] = "C",
+    [4] = "B",
+    [5] = "A",
+    [6] = "S",
+    [7] = "SS",
+    [8] = "G",
+    [9] = "N"
+}
+
+local selectedRanks = {} -- Lưu trữ các rank đã chọn
+local autoSellEnabled = false -- Trạng thái Auto Sell
+
+-- Cập nhật ConfigSystem để lưu các biến mới
+ConfigSystem.DefaultConfig.SelectedRanks = selectedRanks
+ConfigSystem.DefaultConfig.AutoSellEnabled = autoSellEnabled
+
+-- Dropdown để chọn Rank
+Tabs.Sell:AddDropdown("RankDropdown", {
+    Title = "Select Ranks to Sell",
+    Values = {"E", "D", "C", "B", "A", "S", "SS", "G", "N"},
+    Multi = true,
+    Default = ConfigSystem.CurrentConfig.SelectedRanks or {},
+    Callback = function(ranks)
+        selectedRanks = ranks
+        ConfigSystem.CurrentConfig.SelectedRanks = ranks
+        ConfigSystem.SaveConfig()
+        print("Selected Ranks:", table.concat(ranks, ", ")) -- Gỡ lỗi
+    end
+})
+
+-- Hàm để bán vũ khí theo rank
+local function sellWeaponsByRank()
+    local playerWeapons = game:GetService("Players").LocalPlayer.leaderstats.Inventory.Weapons:GetChildren()
+    local anySold = false
+    
+    for _, weapon in ipairs(playerWeapons) do
+        local weaponRank = weapon:GetAttribute("Rank")
+        if weaponRank then
+            local rankLetter = rankMapping[weaponRank]
+            if rankLetter and table.find(selectedRanks, rankLetter) then
+                local args = {
+                    [1] = {
+                        [1] = {
+                            ["Event"] = "SellWeapon",
+                            ["Weapons"] = {
+                                [1] = weapon.Name
+                            }
+                        },
+                        [2] = "\t"
+                    }
+                }
+                
+                game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent"):FireServer(unpack(args))
+                print("Đã bán vũ khí:", weapon.Name, "(Rank:", rankLetter .. ")")
+                anySold = true
+                task.wait(0.3) -- Đợi 0.3 giây giữa mỗi lần bán
+            end
+        end
+    end
+    
+    return anySold
+end
+
+-- Toggle để bật/tắt Auto Sell
+Tabs.Sell:AddToggle("AutoSellToggle", {
+    Title = "Auto Sell Weapons",
+    Default = ConfigSystem.CurrentConfig.AutoSellEnabled or false,
+    Callback = function(state)
+        autoSellEnabled = state
+        ConfigSystem.CurrentConfig.AutoSellEnabled = state
+        ConfigSystem.SaveConfig()
+        
+        if state then
+            task.spawn(function()
+                while autoSellEnabled do
+                    local sold = sellWeaponsByRank()
+                    if not sold then
+                        task.wait(1) -- Đợi lâu hơn nếu không có vũ khí nào được bán
+                    else
+                        task.wait(0.5) -- Đợi ngắn hơn nếu có vũ khí được bán
+                    end
+                end
+            end)
+        end
+    end
+})
+
+-- Nút bán ngay
+Tabs.Sell:AddButton({
+    Title = "Sell Now",
+    Description = "Sell weapons of selected ranks immediately",
+    Callback = function()
+        sellWeaponsByRank()
     end
 })
