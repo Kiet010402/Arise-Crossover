@@ -1861,8 +1861,13 @@ local function getUniqueWeaponNames()
     local weapons = {}
     local seenNames = {} -- Để theo dõi tên duy nhất
 
-    local playerWeapons = game:GetService("Players").LocalPlayer.leaderstats.Inventory.Weapons:GetChildren()
-    for _, weapon in ipairs(playerWeapons) do
+    local inventory = game:GetService("Players").LocalPlayer:WaitForChild("leaderstats"):WaitForChild("Inventory")
+    if not inventory then return weapons end
+    
+    local weaponsFolder = inventory:WaitForChild("Weapons")
+    if not weaponsFolder then return weapons end
+
+    for _, weapon in ipairs(weaponsFolder:GetChildren()) do
         local weaponName = weapon:GetAttribute("Name") -- Lấy thuộc tính "Name"
         if weaponName and not seenNames[weaponName] then
             table.insert(weapons, weaponName)
@@ -1905,8 +1910,13 @@ local function getWeaponsByLevel(weaponType)
         weaponsByLevel[i] = {}
     end
     
-    local playerWeapons = game:GetService("Players").LocalPlayer.leaderstats.Inventory.Weapons:GetChildren()
-    for _, weapon in ipairs(playerWeapons) do
+    local inventory = game:GetService("Players").LocalPlayer:WaitForChild("leaderstats"):WaitForChild("Inventory")
+    if not inventory then return weaponsByLevel end
+    
+    local weaponsFolder = inventory:WaitForChild("Weapons")
+    if not weaponsFolder then return weaponsByLevel end
+    
+    for _, weapon in ipairs(weaponsFolder:GetChildren()) do
         local weaponName = weapon:GetAttribute("Name")
         local weaponLevel = weapon:GetAttribute("Level") or 1
         
@@ -1921,12 +1931,15 @@ end
 
 -- Hàm để nâng cấp vũ khí theo level
 local function upgradeWeaponsByLevel(weaponType)
+    if not weaponType then return false end
+    
     local weaponsByLevel = getWeaponsByLevel(weaponType)
     local anyUpgraded = false
     
     -- Duyệt qua từng level, bắt đầu từ level thấp nhất
     for level = 1, 6 do
         local weapons = weaponsByLevel[level]
+        if not weapons then continue end
         
         -- Nếu có ít nhất 3 vũ khí cùng level, thực hiện nâng cấp
         while #weapons >= 3 do
@@ -1942,9 +1955,14 @@ local function upgradeWeaponsByLevel(weaponType)
             table.remove(weapons, 1)
             table.remove(weapons, 1)
             
-            -- Thực hiện nâng cấp
-            local weaponName = game:GetService("Players").LocalPlayer.leaderstats.Inventory.Weapons:FindFirstChild(upgradeWeapons[1]):GetAttribute("Name")
+            -- Kiểm tra và lấy weapon name an toàn
+            local weaponInstance = game:GetService("Players").LocalPlayer.leaderstats.Inventory.Weapons:FindFirstChild(upgradeWeapons[1])
+            if not weaponInstance then continue end
             
+            local weaponName = weaponInstance:GetAttribute("Name")
+            if not weaponName then continue end
+            
+            -- Thực hiện nâng cấp
             local args = {
                 [1] = {
                     [1] = {
@@ -2156,3 +2174,39 @@ Tabs.Shop:AddToggle("AutoSellToggle", {
         end
     end
 })
+
+-- Sửa lỗi DungeonHandler
+local function setupDungeonHandler()
+    local player = game:GetService("Players").LocalPlayer
+    if not player then return end
+    
+    local function safeGetDisplayName(instance)
+        if not instance then return "" end
+        local success, result = pcall(function()
+            return instance.DisplayName
+        end)
+        return success and result or ""
+    end
+    
+    player.PlayerGui.Warn.ChildAdded:Connect(function(dungeon)
+        if dungeon:IsA("Frame") and AutoDetectToggle.Value then
+            print("Đã phát hiện Dungeon!")
+            for _, child in ipairs(dungeon:GetChildren()) do
+                if child:IsA("TextLabel") then
+                    local text = safeGetDisplayName(child) or child.Text
+                    for village, spawnName in pairs(villageSpawns) do
+                        if string.find(string.lower(text or ""), string.lower(village)) then
+                            teleportEnabled = false
+                            print("Đã phát hiện làng:", village)
+                            SetSpawnAndReset(spawnName)
+                            return
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- Gọi hàm setup khi script khởi động
+setupDungeonHandler()
