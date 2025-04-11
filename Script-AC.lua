@@ -1640,7 +1640,7 @@ end
 AutoSaveConfig()
 setupSaveEvents() -- Thêm dòng này
 
--- Thêm code cho tab Buy sau phần mã của tab mount
+local BuyWeaponSection = Tabs.shop:AddSection("Buy Weapon")
 -- Mapping giữa shops và weapons
 local weaponsByShop = {
     ["WeaponShop1"] = {"BasicSword", "StarterBlade", "StoneDagger"},
@@ -1744,83 +1744,7 @@ Tabs.shop:AddToggle("AutoBuyToggle", {
         end
     end
 })
-
--- Thêm chức năng Auto Scan Weapon
-local autoScanEnabled = false
-local scanDelay = 1 -- Độ trễ giữa các lần quét (giây)
-
--- Cập nhật ConfigSystem để lưu biến mới
-ConfigSystem.DefaultConfig.AutoScanEnabled = autoScanEnabled
-ConfigSystem.DefaultConfig.ScanDelay = scanDelay
-
--- Slider để điều chỉnh Scan Delay
-Tabs.shop:AddSlider("ScanDelaySlider", {
-    Title = "Scan Delay",
-    Min = 0.1,
-    Max = 5,
-    Default = ConfigSystem.CurrentConfig.ScanDelay or scanDelay,
-    Increment = 0.1, -- Thêm tham số Increment
-    Rounding = 1, -- Thêm tham số Rounding (làm tròn đến 1 chữ số thập phân)
-    Description = "Adjust the delay between scans (seconds)",
-    Suffix = "s",
-    Callback = function(value)
-        scanDelay = value
-        ConfigSystem.CurrentConfig.ScanDelay = value
-        ConfigSystem.SaveConfig()
-    end
-})
-
--- Toggle để bật/tắt Auto Scan
-Tabs.shop:AddToggle("AutoScanToggle", {
-    Title = "Auto Scan Weapons",
-    Default = ConfigSystem.CurrentConfig.AutoScanEnabled or false,
-    Callback = function(state)
-        autoScanEnabled = state
-        ConfigSystem.CurrentConfig.AutoScanEnabled = state
-        ConfigSystem.SaveConfig()
-        
-        if state then
-            task.spawn(function()
-                while autoScanEnabled do
-                    -- Quét qua các shop và weapon
-                    for shop, weapons in pairs(weaponsByShop) do
-                        for _, weapon in ipairs(weapons) do
-                            -- Gửi remote để kiểm tra weapon
-                            local args = {
-                                [1] = {
-                                    [1] = {
-                                        ["Action"] = "Preview",
-                                        ["Shop"] = shop,
-                                        ["Item"] = weapon,
-                                        ["Event"] = "ItemShopAction"
-                                    },
-                                    [2] = "\n"
-                                }
-                            }
-                            
-                            game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent"):FireServer(unpack(args))
-                            print("Đã quét:", weapon, "từ cửa hàng:", shop)
-                            task.wait(scanDelay) -- Chờ giữa mỗi lần quét
-                            
-                            -- Nếu Auto Scan đã tắt, thoát vòng lặp
-                            if not autoScanEnabled then
-                                break
-                            end
-                        end
-                        
-                        -- Nếu Auto Scan đã tắt, thoát vòng lặp
-                        if not autoScanEnabled then
-                            break
-                        end
-                    end
-                    
-                    task.wait(1) -- Chờ 1 giây sau khi quét hết tất cả
-                end
-            end)
-        end
-    end
-})
-
+local UpdateWeaponSection = Tabs.shop:AddSection("Update Weapon")
 -- Thêm code cho tab Update sau phần mã của tab Buy
 -- Hàm để lấy danh sách tên vũ khí duy nhất từ inventory
 local function getUniqueWeaponNames()
@@ -2032,11 +1956,7 @@ Tabs.shop:AddToggle("AutoSelectToggle", {
 })
 
 -- Thêm section sell pet vào tab shop
-Tabs.shop:AddParagraph({
-    Title = "Pet Selling System",
-    Content = "Hệ thống bán pet theo rank. Chọn các rank pet muốn bán và bật Auto Sell."
-})
-
+local SellPetSection = Tabs.shop:AddSection("Sell Pet")
 -- Ánh xạ các rank số sang chữ cái
 local rankMapping = {
     [1] = "E",
