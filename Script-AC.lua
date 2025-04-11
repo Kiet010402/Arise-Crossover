@@ -32,7 +32,7 @@ ConfigSystem.DefaultConfig = {
     AutoBuyEnabled = false,
     AutoScanEnabled = false,
     ScanDelay = 1,
-    SelectedRanks = {},
+    SelectedPetRank = 1,
     AutoSellEnabled = false
 }
 ConfigSystem.CurrentConfig = {}
@@ -2056,89 +2056,89 @@ local rankMapping = {
     [9] = "N"
 }
 
-local selectedRanks = {} -- Lưu trữ các rank đã chọn
-local autoSellEnabled = false -- Trạng thái Auto Sell
+local selectedRank = 1 -- Mặc định bán từ Rank E trở xuống
+local autoSelling = false
 
--- Cập nhật ConfigSystem để lưu các biến mới
-ConfigSystem.DefaultConfig.SelectedRanks = selectedRanks
-ConfigSystem.DefaultConfig.AutoSellEnabled = autoSellEnabled
+-- Cập nhật ConfigSystem
+ConfigSystem.DefaultConfig.SelectedPetRank = selectedRank
+ConfigSystem.DefaultConfig.AutoSellEnabled = autoSelling
 
--- Dropdown để chọn Rank
-Tabs.Sell:AddDropdown("RankDropdown", {
-    Title = "Select Ranks to Sell",
+-- Dropdown để chọn Rank Pet
+Tabs.Sell:AddDropdown("PetRankDropdown", {
+    Title = "Select Pet Rank",
     Values = {"E", "D", "C", "B", "A", "S", "SS", "G", "N"},
-    Multi = true,
-    Default = ConfigSystem.CurrentConfig.SelectedRanks or {},
-    Callback = function(ranks)
-        selectedRanks = ranks
-        ConfigSystem.CurrentConfig.SelectedRanks = ranks
-        ConfigSystem.SaveConfig()
-        print("Selected Ranks:", table.concat(ranks, ", ")) -- Gỡ lỗi
+    Multi = false,
+    Default = rankMapping[ConfigSystem.CurrentConfig.SelectedPetRank] or "E",
+    Callback = function(rank)
+        -- Tìm số tương ứng với rank
+        for num, letter in pairs(rankMapping) do
+            if letter == rank then
+                selectedRank = num
+                ConfigSystem.CurrentConfig.SelectedPetRank = num
+                ConfigSystem.SaveConfig()
+                break
+            end
+        end
+        print("Selected Pet Rank:", rank)
     end
 })
 
--- Hàm để bán vũ khí theo rank
-local function sellWeaponsByRank()
-    local playerWeapons = game:GetService("Players").LocalPlayer.leaderstats.Inventory.Weapons:GetChildren()
-    local anySold = false
-    
-    for _, weapon in ipairs(playerWeapons) do
-        local weaponRank = weapon:GetAttribute("Rank")
-        if weaponRank then
-            local rankLetter = rankMapping[weaponRank]
-            if rankLetter and table.find(selectedRanks, rankLetter) then
-                local args = {
-                    [1] = {
-                        [1] = {
-                            ["Event"] = "SellWeapon",
-                            ["Weapons"] = {
-                                [1] = weapon.Name
-                            }
-                        },
-                        [2] = "\t"
+-- Hàm để bán pet
+local function sellPet(pet)
+    if pet and pet:IsA("Folder") then
+        local args = {
+            [1] = {
+                [1] = {
+                    ["Event"] = "SellPet",
+                    ["Pets"] = {
+                        [1] = pet.Name
                     }
-                }
-                
-                game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent"):FireServer(unpack(args))
-                print("Đã bán vũ khí:", weapon.Name, "(Rank:", rankLetter .. ")")
-                anySold = true
-                task.wait(0.3) -- Đợi 0.3 giây giữa mỗi lần bán
-            end
-        end
+                },
+                [2] = "\t"
+            }
+        }
+        game:GetService("ReplicatedStorage"):WaitForChild("BridgeNet2"):WaitForChild("dataRemoteEvent"):FireServer(unpack(args))
+        return true
     end
-    
-    return anySold
+    return false
 end
 
 -- Toggle để bật/tắt Auto Sell
 Tabs.Sell:AddToggle("AutoSellToggle", {
-    Title = "Auto Sell Weapons",
+    Title = "Auto Sell Pets",
     Default = ConfigSystem.CurrentConfig.AutoSellEnabled or false,
     Callback = function(state)
-        autoSellEnabled = state
+        autoSelling = state
         ConfigSystem.CurrentConfig.AutoSellEnabled = state
         ConfigSystem.SaveConfig()
         
         if state then
             task.spawn(function()
-                while autoSellEnabled do
-                    local sold = sellWeaponsByRank()
-                    if not sold then
-                        task.wait(1) -- Đợi lâu hơn nếu không có vũ khí nào được bán
-                    else
-                        task.wait(0.5) -- Đợi ngắn hơn nếu có vũ khí được bán
+                while autoSelling do
+                    local petFolder = game:GetService("Players").LocalPlayer.leaderstats.Inventory:FindFirstChild("Pets")
+                    if petFolder then
+                        local soldAny = false
+                        for _, pet in ipairs(petFolder:GetChildren()) do
+                            local rankVal = pet:GetAttribute("Rank")
+                            if typeof(rankVal) == "number" and rankVal <= selectedRank then
+                                if sellPet(pet) then
+                                    soldAny = true
+                                    Fluent:Notify({
+                                        Title = "Đã bán Pet",
+                                        Content = "Đã bán pet " .. pet.Name .. " (Rank: " .. rankMapping[rankVal] .. ")",
+                                        Duration = 2
+                                    })
+                                    task.wait(0.3) -- Đợi giữa mỗi lần bán
+                                end
+                            end
+                        end
+                        if not soldAny then
+                            task.wait(1) -- Đợi lâu hơn nếu không có pet nào được bán
+                        end
                     end
+                    task.wait(0.1) -- Đợi ngắn giữa các vòng lặp
                 end
             end)
         end
-    end
-})
-
--- Nút bán ngay
-Tabs.Sell:AddButton({
-    Title = "Sell Now",
-    Description = "Sell weapons of selected ranks immediately",
-    Callback = function()
-        sellWeaponsByRank()
     end
 })
