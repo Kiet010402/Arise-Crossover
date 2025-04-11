@@ -2079,11 +2079,17 @@ Tabs.Sell:AddDropdown("RankDropdown", {
     Default = ConfigSystem.CurrentConfig.SelectedRanks or {},
     Callback = function(selections)
         selectedRanks = {}
-        for _, selection in pairs(selections) do
-            -- Trích xuất số rank từ chuỗi (vd: từ "E (Rank 1)" lấy ra 1)
-            local rank = tonumber(selection:match("Rank (%d+)"))
-            if rank then
-                table.insert(selectedRanks, rank)
+        -- Kiểm tra xem selections có phải là table hay không
+        if type(selections) == "table" then
+            for selection, isSelected in pairs(selections) do
+                -- Chỉ xử lý các mục đã chọn (boolean = true)
+                if isSelected == true then
+                    -- Trích xuất số rank từ chuỗi (vd: từ "E (Rank 1)" lấy ra 1)
+                    local rank = tonumber(string.match(selection, "Rank (%d+)"))
+                    if rank then
+                        table.insert(selectedRanks, rank)
+                    end
+                end
             end
         end
         ConfigSystem.CurrentConfig.SelectedRanks = selections
