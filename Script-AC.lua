@@ -31,7 +31,9 @@ ConfigSystem.DefaultConfig = {
     SelectedWeapon = "",
     AutoBuyEnabled = false,
     AutoScanEnabled = false,
-    ScanDelay = 1
+    ScanDelay = 1,
+    SelectedSellRankNames = {},
+    AutoSellEnabled = false
 }
 ConfigSystem.CurrentConfig = {}
 
@@ -329,6 +331,7 @@ local Tabs = {
     dungeon = Window:AddTab({ Title = "Dungeon ", Icon = "" }),
     Buy = Window:AddTab({ Title = "Buy", Icon = "" }),
     Update = Window:AddTab({ Title = "Update", Icon = "" }),
+    Sell = Window:AddTab({ Title = "Sell", Icon = "" }),
     Player = Window:AddTab({ Title = "Player", Icon = "" }),
     Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
 }
@@ -2040,78 +2043,138 @@ Tabs.Update:AddToggle("AutoSelectToggle", {
     end
 })
 
+-- Thêm code cho tab Sell
 local rankMapping = {
-    [1] = "E",
-    [2] = "D",
-    [3] = "C",
-    [4] = "B",
-    [5] = "A",
-    [6] = "S",
-    [7] = "SS",
-    [8] = "G",
-    [9] = "N"
+    [1] = "E", [2] = "D", [3] = "C", [4] = "B", [5] = "A", 
+    [6] = "S", [7] = "SS", [8] = "G", [9] = "N"
 }
+local reverseRankMapping = {}
+for num, str in pairs(rankMapping) do
+    reverseRankMapping[str] = num
+end
 
-local selectedRank = 1 -- Mặc định bán từ Rank 1 trở xuống
-local autoSelling = false
+local rankNames = {}
+for i = 1, 9 do
+    table.insert(rankNames, rankMapping[i])
+end
 
--- Thêm tab Sell
-Tabs.Sell = Window:AddTab({ Title = "Sell", Icon = "" })
+local selectedSellRankNames = {} -- Lưu tên rank đã chọn (E, D, C,...)
+local selectedSellRanks = {} -- Lưu số rank đã chọn (1, 2, 3,...)
+local autoSellEnabled = false
 
--- Dropdown để chọn Rank
-Tabs.Sell:AddDropdown("RankDropdown", {
-    Title = "Chọn Rank bán (<=)",
-    Values = {"E", "D", "C", "B", "A", "S", "SS", "G", "N"},
-    Multi = true,
-    Default = rankMapping[selectedRank],
-    Callback = function(selectedRanks)
-        -- Chuyển đổi từ chữ sang số
-        local selectedNumbers = {}
-        for _, rank in ipairs(selectedRanks) do
-            for num, letter in pairs(rankMapping) do
-                if letter == rank then
-                    table.insert(selectedNumbers, num)
+-- Cập nhật ConfigSystem cho tab Sell
+ConfigSystem.DefaultConfig.SelectedSellRankNames = {}
+ConfigSystem.DefaultConfig.AutoSellEnabled = false
+ConfigSystem.CurrentConfig.SelectedSellRankNames = ConfigSystem.CurrentConfig.SelectedSellRankNames or {}
+ConfigSystem.CurrentConfig.AutoSellEnabled = ConfigSystem.CurrentConfig.AutoSellEnabled or false
+
+-- Chuyển đổi rank names đã lưu thành rank numbers khi tải config
+for _, rankName in ipairs(ConfigSystem.CurrentConfig.SelectedSellRankNames) do
+    local rankNum = reverseRankMapping[rankName]
+    if rankNum then
+        table.insert(selectedSellRanks, rankNum)
+    end
+end
+autoSellEnabled = ConfigSystem.CurrentConfig.AutoSellEnabled
+
+-- Dropdown để chọn Rank muốn bán (hiển thị tên rank)
+Tabs.Sell:AddDropdown("SellRankDropdown", {
+    Title = "Choose Rank to Sell",
+    Values = rankNames,
+    Multi = true, -- Cho phép chọn nhiều
+    Default = ConfigSystem.CurrentConfig.SelectedSellRankNames,
+    Callback = function(selectedNames)
+        selectedSellRankNames = selectedNames
+        selectedSellRanks = {} -- Reset danh sách số rank
+        for _, rankName in ipairs(selectedNames) do
+            local rankNum = reverseRankMapping[rankName]
+            if rankNum then
+                table.insert(selectedSellRanks, rankNum)
+            end
+        end
+        
+        -- Lưu tên rank vào config
+        ConfigSystem.CurrentConfig.SelectedSellRankNames = selectedSellRankNames
+        ConfigSystem.SaveConfig()
+        print("Selected Ranks (Names):", table.concat(selectedSellRankNames, ", "))
+        print("Selected Ranks (Numbers):", table.concat(selectedSellRanks, ", "))
+    end
+})
+
+-- Hàm tự động bán pet
+local function autoSellPets()
+    local petFolder = player.leaderstats.Inventory:FindFirstChild("Pets")
+    if not petFolder then return end
+
+    while autoSellEnabled do
+        local petSold = false
+        for _, pet in ipairs(petFolder:GetChildren()) do
+            -- Kiểm tra xem autoSell đã bị tắt chưa
+            if not autoSellEnabled then break end 
+            
+            local rankVal = pet:GetAttribute("Rank")
+            if typeof(rankVal) == "number" then
+                local shouldSell = false
+                -- Kiểm tra xem rank của pet có nằm trong danh sách rank đã chọn không
+                for _, selectedRankNum in ipairs(selectedSellRanks) do
+                    if rankVal == selectedRankNum then
+                        shouldSell = true
+                        break
+                    end
+                end
+
+                if shouldSell then
+                    local args = {
+                        [1] = {
+                            [1] = {
+                                ["Event"] = "SellPet",
+                                ["Pets"] = {
+                                    [1] = pet.Name
+                                }
+                            },
+                            [2] = "\t"
+                        }
+                    }
+                    remote:FireServer(unpack(args))
+                    print("Đã bán pet:", pet.Name, "(Rank:", rankMapping[rankVal] or rankVal .. ")")
+                    petSold = true
+                    task.wait(0.3) -- Đợi một chút sau mỗi lần bán
                 end
             end
         end
-        selectedRank = math.max(unpack(selectedNumbers))
-        ConfigSystem.CurrentConfig.SelectedRank = selectedRank
-        ConfigSystem.SaveConfig()
+        
+        -- Nếu không bán được pet nào trong lần quét này, đợi lâu hơn
+        if not petSold then
+            task.wait(2) 
+        end
+        -- Nếu autoSell đã bị tắt trong vòng lặp, thoát ra
+        if not autoSellEnabled then break end
+        task.wait(0.1) -- Đợi ngắn giữa các lần quét inventory
     end
-})
+    print("Đã dừng Auto Sell.")
+end
 
--- Nút bật auto sell
+-- Toggle để bật/tắt Auto Sell
 Tabs.Sell:AddToggle("AutoSellToggle", {
     Title = "Auto Sell Pet",
-    Default = autoSelling,
+    Default = autoSellEnabled,
     Callback = function(state)
-        autoSelling = state
+        autoSellEnabled = state
         ConfigSystem.CurrentConfig.AutoSellEnabled = state
         ConfigSystem.SaveConfig()
+        
+        if state then
+            print("Đang bật Auto Sell...")
+            task.spawn(autoSellPets)
+        else
+            print("Đang tắt Auto Sell...")
+        end
     end
 })
 
--- Vòng lặp bán pet theo rank dạng số
-RunService.Heartbeat:Connect(function()
-    if not autoSelling then return end
-
-    for _, pet in ipairs(petFolder:GetChildren()) do
-        local rankVal = pet:GetAttribute("Rank")
-        if typeof(rankVal) == "number" and rankVal <= selectedRank then
-            local args = {
-                [1] = {
-                    [1] = {
-                        ["Event"] = "SellPet",
-                        ["Pets"] = {
-                            [1] = pet.Name
-                        }
-                    },
-                    [2] = "\t"
-                }
-            }
-            remote:FireServer(unpack(args))
-            print("Đã bán pet:", pet.Name, "(Rank:", rankVal .. ")")
-            task.wait(0.3)
-        end
-    end
-end)
+-- Thêm thông tin hướng dẫn
+Tabs.Sell:AddParagraph({
+    Title = "Hướng dẫn",
+    Content = "1. Chọn các cấp bậc pet bạn muốn bán từ dropdown.\n" ..
+              "2. Bật 'Auto Sell Pet' để bắt đầu bán tự động."
+})
