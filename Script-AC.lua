@@ -329,7 +329,7 @@ local Tabs = {
     tp = Window:AddTab({ Title = "Teleports", Icon = "" }),
     mount = Window:AddTab({ Title = "Mount Location/farm", Icon = "" }),
     dungeon = Window:AddTab({ Title = "Dungeon ", Icon = "" }),
-    Shop = Window:AddTab({ Title = "Shop", Icon = "" }),
+    shop = Window:AddTab({ Title = "Shop", Icon = "" }),
     Player = Window:AddTab({ Title = "Player", Icon = "" }),
     Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
 }
@@ -1641,34 +1641,7 @@ end
 AutoSaveConfig()
 setupSaveEvents() -- Thêm dòng này
 
--- Thêm code cho tab Shop sau phần code của tab dungeon
--- Ánh xạ các rank số sang chữ cái
-local rankMapping = {
-    [1] = "E",
-    [2] = "D",
-    [3] = "C",
-    [4] = "B",
-    [5] = "A",
-    [6] = "S",
-    [7] = "SS",
-    [8] = "G",
-    [9] = "N"
-}
-
--- Tạo mảng giá trị để hiển thị trong dropdown
-local rankValues = {}
-for i = 1, 9 do
-    table.insert(rankValues, rankMapping[i] .. " (Rank " .. i .. ")")
-end
-
--- Biến để lưu trạng thái
-local selectedRanks = {}
-local autoSellEnabled = false
-
--- Cập nhật ConfigSystem để lưu các biến mới
-ConfigSystem.DefaultConfig.SelectedRanks = {}
-ConfigSystem.DefaultConfig.AutoSellEnabled = false
-
+-- Thêm code cho tab Buy sau phần mã của tab mount
 -- Mapping giữa shops và weapons
 local weaponsByShop = {
     ["WeaponShop1"] = {"BasicSword", "StarterBlade", "StoneDagger"},
@@ -1683,24 +1656,14 @@ local weaponsByShop = {
 local selectedShop = "WeaponShop1" -- Shop mặc định
 local selectedWeapon = "" -- Weapon mặc định
 local autoBuyEnabled = false -- Trạng thái Auto Buy
-local autoScanEnabled = false -- Trạng thái Auto Scan
-local scanDelay = 1 -- Độ trễ giữa các lần quét (giây)
 
--- Cập nhật ConfigSystem
+-- Cập nhật ConfigSystem để lưu các biến mới
 ConfigSystem.DefaultConfig.SelectedShop = selectedShop
 ConfigSystem.DefaultConfig.SelectedWeapon = selectedWeapon
 ConfigSystem.DefaultConfig.AutoBuyEnabled = autoBuyEnabled
-ConfigSystem.DefaultConfig.AutoScanEnabled = autoScanEnabled
-ConfigSystem.DefaultConfig.ScanDelay = scanDelay
-
--- Thêm các section cho tab Shop
-Tabs.Shop:AddParagraph({
-    Title = "Buy Weapons",
-    Content = "Mua và quét vũ khí từ các cửa hàng"
-})
 
 -- Dropdown để chọn Shop
-Tabs.Shop:AddDropdown("ShopDropdown", {
+Tabs.shop:AddDropdown("ShopDropdown", {
     Title = "Select Shop",
     Values = {"WeaponShop1", "WeaponShop2", "WeaponShop3", "WeaponShop4", "WeaponShop5", "WeaponShop6", "WeaponShop7"},
     Multi = false,
@@ -1728,7 +1691,7 @@ Tabs.Shop:AddDropdown("ShopDropdown", {
 })
 
 -- Dropdown để chọn Weapon trong shop đã chọn
-Tabs.Shop:AddDropdown("WeaponDropdown", {
+Tabs.shop:AddDropdown("WeaponDropdown", {
     Title = "Select Weapon",
     Values = weaponsByShop[selectedShop] or {},
     Multi = false,
@@ -1737,6 +1700,7 @@ Tabs.Shop:AddDropdown("WeaponDropdown", {
         selectedWeapon = weapon
         ConfigSystem.CurrentConfig.SelectedWeapon = weapon
         ConfigSystem.SaveConfig()
+        print("Selected Weapon:", selectedWeapon) -- Gỡ lỗi
     end
 })
 
@@ -1763,7 +1727,7 @@ local function buyWeapon()
 end
 
 -- Toggle để bật/tắt Auto Buy
-Tabs.Shop:AddToggle("AutoBuyToggle", {
+Tabs.shop:AddToggle("AutoBuyToggle", {
     Title = "Auto Buy Weapon",
     Default = ConfigSystem.CurrentConfig.AutoBuyEnabled or false,
     Callback = function(state)
@@ -1782,14 +1746,22 @@ Tabs.Shop:AddToggle("AutoBuyToggle", {
     end
 })
 
+-- Thêm chức năng Auto Scan Weapon
+local autoScanEnabled = false
+local scanDelay = 1 -- Độ trễ giữa các lần quét (giây)
+
+-- Cập nhật ConfigSystem để lưu biến mới
+ConfigSystem.DefaultConfig.AutoScanEnabled = autoScanEnabled
+ConfigSystem.DefaultConfig.ScanDelay = scanDelay
+
 -- Slider để điều chỉnh Scan Delay
-Tabs.Shop:AddSlider("ScanDelaySlider", {
+Tabs.shop:AddSlider("ScanDelaySlider", {
     Title = "Scan Delay",
     Min = 0.1,
     Max = 5,
     Default = ConfigSystem.CurrentConfig.ScanDelay or scanDelay,
-    Increment = 0.1,
-    Rounding = 1,
+    Increment = 0.1, -- Thêm tham số Increment
+    Rounding = 1, -- Thêm tham số Rounding (làm tròn đến 1 chữ số thập phân)
     Description = "Adjust the delay between scans (seconds)",
     Suffix = "s",
     Callback = function(value)
@@ -1800,7 +1772,7 @@ Tabs.Shop:AddSlider("ScanDelaySlider", {
 })
 
 -- Toggle để bật/tắt Auto Scan
-Tabs.Shop:AddToggle("AutoScanToggle", {
+Tabs.shop:AddToggle("AutoScanToggle", {
     Title = "Auto Scan Weapons",
     Default = ConfigSystem.CurrentConfig.AutoScanEnabled or false,
     Callback = function(state)
@@ -1850,31 +1822,43 @@ Tabs.Shop:AddToggle("AutoScanToggle", {
     end
 })
 
--- Thêm section cho Update Weapons
-Tabs.Shop:AddParagraph({
-    Title = "Update Weapons",
-    Content = "Nâng cấp vũ khí của bạn"
-})
-
+-- Thêm code cho tab Update sau phần mã của tab Buy
 -- Hàm để lấy danh sách tên vũ khí duy nhất từ inventory
 local function getUniqueWeaponNames()
     local weapons = {}
     local seenNames = {} -- Để theo dõi tên duy nhất
 
-    local inventory = game:GetService("Players").LocalPlayer:WaitForChild("leaderstats"):WaitForChild("Inventory")
-    if not inventory then return weapons end
-    
-    local weaponsFolder = inventory:WaitForChild("Weapons")
-    if not weaponsFolder then return weapons end
+    local playerWeapons = game:GetService("Players").LocalPlayer.leaderstats.Inventory.Weapons:GetChildren()
+    print("Đang lấy danh sách vũ khí...") -- GỠ LỖI
 
-    for _, weapon in ipairs(weaponsFolder:GetChildren()) do
+    for _, weapon in ipairs(playerWeapons) do
         local weaponName = weapon:GetAttribute("Name") -- Lấy thuộc tính "Name"
-        if weaponName and not seenNames[weaponName] then
-            table.insert(weapons, weaponName)
-            seenNames[weaponName] = true -- Đánh dấu tên đã thấy
+        if weaponName then
+            print("Đã tìm thấy vũ khí:", weaponName) -- GỠ LỖI
+            if not seenNames[weaponName] then
+                table.insert(weapons, weaponName)
+                seenNames[weaponName] = true -- Đánh dấu tên đã thấy
+            end
         end
     end
     return weapons
+end
+
+-- Hàm để lấy danh sách ID của tất cả vũ khí cùng loại
+local function getWeaponIDs(weaponType)
+    local weaponIDs = {}
+    
+    local playerWeapons = game:GetService("Players").LocalPlayer.leaderstats.Inventory.Weapons:GetChildren()
+    for _, weapon in ipairs(playerWeapons) do
+        local weaponName = weapon:GetAttribute("Name")
+        -- Kiểm tra xem vũ khí có phải là loại đang tìm kiếm không
+        if weaponName == weaponType then
+            table.insert(weaponIDs, weapon.Name) -- Thêm ID của vũ khí vào danh sách
+            print("Đã tìm thấy ID vũ khí:", weapon.Name) -- GỠ LỖI
+        end
+    end
+    
+    return weaponIDs
 end
 
 -- Lấy danh sách tên vũ khí ban đầu
@@ -1889,7 +1873,7 @@ ConfigSystem.DefaultConfig.AutoUpdateEnabled = autoUpdateEnabled
 ConfigSystem.DefaultConfig.AutoSelectedEnabled = autoSelectedEnabled
 
 -- Dropdown để chọn loại vũ khí muốn nâng cấp
-Tabs.Shop:AddDropdown("WeaponTypeDropdown", {
+Tabs.shop:AddDropdown("WeaponTypeDropdown", {
     Title = "Select Weapon Type",
     Values = weaponTypes,
     Multi = false,
@@ -1898,6 +1882,7 @@ Tabs.Shop:AddDropdown("WeaponTypeDropdown", {
         selectedWeaponType = weaponType
         ConfigSystem.CurrentConfig.SelectedWeaponType = weaponType
         ConfigSystem.SaveConfig()
+        print("Selected Weapon Type:", selectedWeaponType) -- GỠ LỖI
     end
 })
 
@@ -1910,19 +1895,15 @@ local function getWeaponsByLevel(weaponType)
         weaponsByLevel[i] = {}
     end
     
-    local inventory = game:GetService("Players").LocalPlayer:WaitForChild("leaderstats"):WaitForChild("Inventory")
-    if not inventory then return weaponsByLevel end
-    
-    local weaponsFolder = inventory:WaitForChild("Weapons")
-    if not weaponsFolder then return weaponsByLevel end
-    
-    for _, weapon in ipairs(weaponsFolder:GetChildren()) do
+    local playerWeapons = game:GetService("Players").LocalPlayer.leaderstats.Inventory.Weapons:GetChildren()
+    for _, weapon in ipairs(playerWeapons) do
         local weaponName = weapon:GetAttribute("Name")
         local weaponLevel = weapon:GetAttribute("Level") or 1
         
         -- Nếu không chọn loại vũ khí cụ thể hoặc vũ khí thuộc loại đã chọn
         if (not weaponType or weaponType == "" or weaponName == weaponType) and weaponLevel >= 1 and weaponLevel <= 7 then
             table.insert(weaponsByLevel[weaponLevel], weapon.Name)
+            print("Đã tìm thấy vũ khí:", weaponName, "Level:", weaponLevel, "ID:", weapon.Name)
         end
     end
     
@@ -1931,15 +1912,12 @@ end
 
 -- Hàm để nâng cấp vũ khí theo level
 local function upgradeWeaponsByLevel(weaponType)
-    if not weaponType then return false end
-    
     local weaponsByLevel = getWeaponsByLevel(weaponType)
     local anyUpgraded = false
     
     -- Duyệt qua từng level, bắt đầu từ level thấp nhất
     for level = 1, 6 do
         local weapons = weaponsByLevel[level]
-        if not weapons then continue end
         
         -- Nếu có ít nhất 3 vũ khí cùng level, thực hiện nâng cấp
         while #weapons >= 3 do
@@ -1955,14 +1933,9 @@ local function upgradeWeaponsByLevel(weaponType)
             table.remove(weapons, 1)
             table.remove(weapons, 1)
             
-            -- Kiểm tra và lấy weapon name an toàn
-            local weaponInstance = game:GetService("Players").LocalPlayer.leaderstats.Inventory.Weapons:FindFirstChild(upgradeWeapons[1])
-            if not weaponInstance then continue end
-            
-            local weaponName = weaponInstance:GetAttribute("Name")
-            if not weaponName then continue end
-            
             -- Thực hiện nâng cấp
+            local weaponName = game:GetService("Players").LocalPlayer.leaderstats.Inventory.Weapons:FindFirstChild(upgradeWeapons[1]):GetAttribute("Name")
+            
             local args = {
                 [1] = {
                     [1] = {
@@ -2002,7 +1975,7 @@ local function upgradeWeaponsByLevel(weaponType)
 end
 
 -- Nút để làm mới danh sách vũ khí
-Tabs.Shop:AddButton({
+Tabs.shop:AddButton({
     Title = "Refresh Weapon List",
     Description = "Refresh the list of available weapons",
     Callback = function()
@@ -2027,7 +2000,7 @@ Tabs.Shop:AddButton({
 })
 
 -- Toggle để bật/tắt nâng cấp vũ khí đã chọn
-Tabs.Shop:AddToggle("AutoSelectToggle", {
+Tabs.shop:AddToggle("AutoSelectToggle", {
     Title = "Upgrade Selected Weapon",
     Default = ConfigSystem.CurrentConfig.AutoSelectedEnabled or false,
     Callback = function(state)
@@ -2059,14 +2032,36 @@ Tabs.Shop:AddToggle("AutoSelectToggle", {
     end
 })
 
--- Thêm section cho Sell Pets
-Tabs.Shop:AddParagraph({
-    Title = "Sell Pets",
-    Content = "Bán pet theo rank"
-})
+-- Thêm code để tab Sell sau phần code cho tab Update
+-- Ánh xạ các rank số sang chữ cái
+local rankMapping = {
+    [1] = "E",
+    [2] = "D",
+    [3] = "C",
+    [4] = "B",
+    [5] = "A",
+    [6] = "S",
+    [7] = "SS",
+    [8] = "G",
+    [9] = "N"
+}
+
+-- Tạo mảng giá trị để hiển thị trong dropdown
+local rankValues = {}
+for i = 1, 9 do
+    table.insert(rankValues, rankMapping[i] .. " (Rank " .. i .. ")")
+end
+
+-- Biến để lưu trạng thái
+local selectedRanks = {}
+local autoSellEnabled = false
+
+-- Cập nhật ConfigSystem để lưu các biến mới
+ConfigSystem.DefaultConfig.SelectedRanks = {}
+ConfigSystem.DefaultConfig.AutoSellEnabled = false
 
 -- Dropdown để chọn Rank
-Tabs.Shop:AddDropdown("RankDropdown", {
+Tabs.shop:AddDropdown("RankDropdown", {
     Title = "Choose Ranks",
     Values = rankValues,
     Multi = true,
@@ -2142,7 +2137,7 @@ local function sellPetsByRank()
 end
 
 -- Toggle để bật/tắt Auto Sell
-Tabs.Shop:AddToggle("AutoSellToggle", {
+Tabs.shop:AddToggle("AutoSellToggle", {
     Title = "Auto Sell Pets",
     Default = ConfigSystem.CurrentConfig.AutoSellEnabled or false,
     Callback = function(state)
@@ -2174,39 +2169,3 @@ Tabs.Shop:AddToggle("AutoSellToggle", {
         end
     end
 })
-
--- Sửa lỗi DungeonHandler
-local function setupDungeonHandler()
-    local player = game:GetService("Players").LocalPlayer
-    if not player then return end
-    
-    local function safeGetDisplayName(instance)
-        if not instance then return "" end
-        local success, result = pcall(function()
-            return instance.DisplayName
-        end)
-        return success and result or ""
-    end
-    
-    player.PlayerGui.Warn.ChildAdded:Connect(function(dungeon)
-        if dungeon:IsA("Frame") and AutoDetectToggle.Value then
-            print("Đã phát hiện Dungeon!")
-            for _, child in ipairs(dungeon:GetChildren()) do
-                if child:IsA("TextLabel") then
-                    local text = safeGetDisplayName(child) or child.Text
-                    for village, spawnName in pairs(villageSpawns) do
-                        if string.find(string.lower(text or ""), string.lower(village)) then
-                            teleportEnabled = false
-                            print("Đã phát hiện làng:", village)
-                            SetSpawnAndReset(spawnName)
-                            return
-                        end
-                    end
-                end
-            end
-        end
-    end)
-end
-
--- Gọi hàm setup khi script khởi động
-setupDungeonHandler()
