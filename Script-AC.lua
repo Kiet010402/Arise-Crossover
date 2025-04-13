@@ -32,41 +32,117 @@ ConfigSystem.DefaultConfig = {
     AutoBuyEnabled = false,
     AutoScanEnabled = false,
     ScanDelay = 1,
-    SelectedRanks = {},
+    SelectedRanks = {}
 }
 ConfigSystem.CurrentConfig = {}
+
+-- Kiểm tra các hàm writefile/readfile tương thích với executor
+local function checkExecutorCompatibility()
+    local functions = {
+        ["writefile"] = writefile or function() return false end,
+        ["readfile"] = readfile or function() return false end,
+        ["isfile"] = isfile or function() return false end
+    }
+    
+    -- Thêm hỗ trợ cho Codex
+    if not functions.writefile and saveinstance then
+        functions.writefile = saveinstance
+    end
+    
+    if not functions.readfile and readbinaryfile then
+        functions.readfile = readbinaryfile
+    end
+    
+    if not functions.isfile and isfolder then
+        functions.isfile = function(path)
+            local success = pcall(function() 
+                return readbinaryfile(path) ~= nil
+            end)
+            return success
+        end
+    end
+    
+    return functions
+end
+
+local fileAPI = checkExecutorCompatibility()
 
 -- Hàm để lưu cấu hình
 ConfigSystem.SaveConfig = function()
     local success, err = pcall(function()
-        writefile(ConfigSystem.FileName, game:GetService("HttpService"):JSONEncode(ConfigSystem.CurrentConfig))
+        local jsonData = game:GetService("HttpService"):JSONEncode(ConfigSystem.CurrentConfig)
+        if fileAPI.writefile then
+            fileAPI.writefile(ConfigSystem.FileName, jsonData)
+            return true
+        end
+        return false
     end)
+    
     if success then
         print("Đã lưu cấu hình thành công!")
     else
         warn("Lưu cấu hình thất bại:", err)
+        -- Thử phương pháp thay thế
+        pcall(function()
+            if saveinstance then
+                saveinstance(ConfigSystem.FileName, game:GetService("HttpService"):JSONEncode(ConfigSystem.CurrentConfig))
+                print("Đã lưu cấu hình thành công qua phương pháp thay thế!")
+            end
+        end)
     end
 end
 
 -- Hàm để tải cấu hình
 ConfigSystem.LoadConfig = function()
     local success, content = pcall(function()
-        if isfile(ConfigSystem.FileName) then
-            return readfile(ConfigSystem.FileName)
+        if fileAPI.isfile and fileAPI.isfile(ConfigSystem.FileName) then
+            return fileAPI.readfile(ConfigSystem.FileName)
         end
         return nil
     end)
     
     if success and content then
-        local data = game:GetService("HttpService"):JSONDecode(content)
-        ConfigSystem.CurrentConfig = data
-        return true
-    else
-        ConfigSystem.CurrentConfig = table.clone(ConfigSystem.DefaultConfig)
-        ConfigSystem.SaveConfig()
-        return false
+        local dataSuccess, data = pcall(function()
+            return game:GetService("HttpService"):JSONDecode(content)
+        end)
+        
+        if dataSuccess and data then
+            ConfigSystem.CurrentConfig = data
+            return true
+        else
+            warn("Lỗi khi phân tích dữ liệu JSON:", data)
+        end
+    end
+    
+    -- Nếu không thể tải cấu hình, tạo mới
+    ConfigSystem.CurrentConfig = table.clone(ConfigSystem.DefaultConfig)
+    ConfigSystem.SaveConfig()
+    return false
+end
+
+-- Thêm hàm để đảm bảo thư mục tồn tại
+ConfigSystem.EnsureDirectory = function(path)
+    if makefolder and not isfolder then
+        local folders = string.split(path, "/")
+        local currentPath = ""
+        
+        for _, folder in ipairs(folders) do
+            if folder ~= "" then
+                currentPath = currentPath .. folder .. "/"
+                if not isfolder(currentPath) then
+                    makefolder(currentPath)
+                end
+            end
+        end
     end
 end
+
+-- Đảm bảo thư mục tồn tại trước khi tải
+pcall(function()
+    if makefolder and not isfolder("KaihonScriptHub") then
+        makefolder("KaihonScriptHub")
+    end
+end)
 
 -- Tải cấu hình khi khởi động
 ConfigSystem.LoadConfig()
@@ -342,8 +418,7 @@ local mobsByWorld = {
     ["BleachWorld"] = {"Luryu", "Fyakuya", "Genji"},
     ["BCWorld"] = {"Sortudo", "Michille", "Wind"},
     ["ChainsawWorld"] = {"Heaven", "Zere", "Ika"},
-    ["JojoWorld"] = {"Diablo", "Gosuke", "Golyne"},
-    ["DBWorld"] = {"Turtle", "Green", "Sky"}
+    ["JojoWorld"] = {"Diablo", "Gosuke", "Golyne"}
 }
 
 local selectedWorld = "SoloWorld" -- Default world
@@ -351,7 +426,7 @@ local selectedWorld = "SoloWorld" -- Default world
 -- Dropdown để chọn World/Map
 Tabs.Main:AddDropdown("WorldDropdown", {
     Title = "Select World",
-    Values = {"SoloWorld", "NarutoWorld", "OPWorld", "BleachWorld", "BCWorld", "ChainsawWorld", "JojoWorld", "DBWorld"},
+    Values = {"SoloWorld", "NarutoWorld", "OPWorld", "BleachWorld", "BCWorld", "ChainsawWorld", "JojoWorld"},
     Multi = false,
     Default = selectedWorld,
     Callback = function(world)
@@ -593,15 +668,10 @@ Tabs.tp:AddButton({
     end
 })
 
-Tabs.tp:AddButton({
-    Title = "Dragon City",
-    Description = "Set spawn & reset",
-    Callback = function()
-        SetSpawnAndReset("DBWorld")
-    end
-})
-
 local TweenService = game:GetService("TweenService")
+
+
+
 
 
 -- Lấy Player và HumanoidRootPart
