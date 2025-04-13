@@ -3,10 +3,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 local workspace = game:GetService("Workspace")
 
--- Thêm biến sử dụng bởi Auto Attack sớm để tránh lỗi
-local autoAttackEnabled = false
-local attackCooldown = 0.5
-
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local hrp = character:WaitForChild("HumanoidRootPart")
@@ -37,243 +33,40 @@ ConfigSystem.DefaultConfig = {
     AutoScanEnabled = false,
     ScanDelay = 1,
     SelectedRanks = {},
-    AutoAttackEnabled = false
 }
 ConfigSystem.CurrentConfig = {}
-
--- Kiểm tra các hàm writefile/readfile tương thích với executor
-local function checkExecutorCompatibility()
-    local functions = {
-        ["writefile"] = writefile or function() return false end,
-        ["readfile"] = readfile or function() return false end,
-        ["isfile"] = isfile or function() return false end
-    }
-    
-    -- Thêm hỗ trợ cho Codex
-    if not functions.writefile and saveinstance then
-        functions.writefile = saveinstance
-    end
-    
-    if not functions.readfile and readbinaryfile then
-        functions.readfile = readbinaryfile
-    end
-    
-    if not functions.isfile and isfolder then
-        functions.isfile = function(path)
-            local success = pcall(function() 
-                return readbinaryfile(path) ~= nil
-            end)
-            return success
-        end
-    end
-    
-    return functions
-end
-
-local fileAPI = checkExecutorCompatibility()
 
 -- Hàm để lưu cấu hình
 ConfigSystem.SaveConfig = function()
     local success, err = pcall(function()
-        local jsonData = game:GetService("HttpService"):JSONEncode(ConfigSystem.CurrentConfig)
-        if fileAPI.writefile then
-            fileAPI.writefile(ConfigSystem.FileName, jsonData)
-            return true
-        end
-        return false
+        writefile(ConfigSystem.FileName, game:GetService("HttpService"):JSONEncode(ConfigSystem.CurrentConfig))
     end)
-    
     if success then
         print("Đã lưu cấu hình thành công!")
     else
         warn("Lưu cấu hình thất bại:", err)
-        -- Thử phương pháp thay thế
-        pcall(function()
-            if saveinstance then
-                saveinstance(ConfigSystem.FileName, game:GetService("HttpService"):JSONEncode(ConfigSystem.CurrentConfig))
-                print("Đã lưu cấu hình thành công qua phương pháp thay thế!")
-            end
-        end)
     end
 end
 
--- Thay đổi hàm LoadConfig để áp dụng cấu hình khi tải
+-- Hàm để tải cấu hình
 ConfigSystem.LoadConfig = function()
     local success, content = pcall(function()
-        if fileAPI.isfile and fileAPI.isfile(ConfigSystem.FileName) then
-            return fileAPI.readfile(ConfigSystem.FileName)
+        if isfile(ConfigSystem.FileName) then
+            return readfile(ConfigSystem.FileName)
         end
         return nil
     end)
     
     if success and content then
-        local dataSuccess, data = pcall(function()
-            return game:GetService("HttpService"):JSONDecode(content)
-        end)
-        
-        if dataSuccess and data then
-            ConfigSystem.CurrentConfig = data
-            print("[CONFIG] Đã tải cấu hình thành công từ:", ConfigSystem.FileName)
-            return true
-        else
-            warn("[CONFIG] Lỗi khi phân tích dữ liệu JSON:", tostring(data))
-        end
+        local data = game:GetService("HttpService"):JSONDecode(content)
+        ConfigSystem.CurrentConfig = data
+        return true
     else
-        print("[CONFIG] Không tìm thấy file cấu hình, tạo mới")
-    end
-    
-    -- Nếu không thể tải cấu hình, tạo mới
-    ConfigSystem.CurrentConfig = table.clone(ConfigSystem.DefaultConfig)
-    ConfigSystem.SaveConfig()
-    return false
-end
-
--- Thêm hàm để áp dụng cấu hình vào UI
-ConfigSystem.ApplyConfig = function()
-    -- Đảm bảo Fluent đã load xong
-    if not Fluent or not Fluent.Options then
-        print("[CONFIG] Fluent chưa sẵn sàng, không thể áp dụng cấu hình")
+        ConfigSystem.CurrentConfig = table.clone(ConfigSystem.DefaultConfig)
+        ConfigSystem.SaveConfig()
         return false
     end
-    
-    print("[CONFIG] Đang áp dụng cấu hình vào UI...")
-    
-    -- Danh sách các toggle và dropdown cần áp dụng
-    local configSettings = {
-        -- Tab Main
-        {type = "toggle", id = "FarmSelectedMob", value = ConfigSystem.CurrentConfig.FarmSelectedMob},
-        {type = "toggle", id = "TeleportMobs", value = ConfigSystem.CurrentConfig.AutoFarmNearestNPCs},
-        {type = "dropdown", id = "MovementMethod", value = ConfigSystem.CurrentConfig.FarmingMethod == "Teleport" and 2 or 1},
-        {type = "toggle", id = "GamepassShadowFarm", value = false}, -- Không lưu trạng thái này vì nó liên quan đến gamepass
-        {type = "toggle", id = "AutoAttackToggle", value = ConfigSystem.CurrentConfig.AutoAttackEnabled or false},
-        
-        -- Tab Main - World và Mob
-        {type = "dropdown", id = "WorldDropdown", value = ConfigSystem.CurrentConfig.SelectedWorld},
-        {type = "dropdown", id = "WorldMobDropdown", value = ConfigSystem.CurrentConfig.SelectedMobName},
-        
-        -- Tab Main - Auto Destroy/Arise
-        {type = "toggle", id = "AutoDestroy", value = ConfigSystem.CurrentConfig.MainAutoDestroy},
-        {type = "toggle", id = "AutoArise", value = ConfigSystem.CurrentConfig.MainAutoArise},
-        
-        -- Tab Shop - Buy Weapon
-        {type = "dropdown", id = "ShopDropdown", value = ConfigSystem.CurrentConfig.SelectedShop},
-        {type = "dropdown", id = "WeaponDropdown", value = ConfigSystem.CurrentConfig.SelectedWeapon},
-        {type = "toggle", id = "AutoBuyToggle", value = ConfigSystem.CurrentConfig.AutoBuyEnabled},
-        
-        -- Tab Shop - Update Weapon
-        {type = "dropdown", id = "WeaponTypeDropdown", value = ConfigSystem.CurrentConfig.SelectedWeaponType},
-        {type = "toggle", id = "AutoSelectToggle", value = ConfigSystem.CurrentConfig.AutoSelectedEnabled},
-        
-        -- Tab Shop - Sell Pet
-        {type = "dropdown", id = "RankDropdown", value = ConfigSystem.CurrentConfig.SelectedRanks},
-        {type = "toggle", id = "AutoSellToggle", value = ConfigSystem.CurrentConfig.AutoSellEnabled}
-    }
-    
-    -- Áp dụng cấu hình vào UI
-    for _, setting in ipairs(configSettings) do
-        if Fluent.Options[setting.id] then
-            local option = Fluent.Options[setting.id]
-            
-            if setting.type == "toggle" and option.SetValue then
-                pcall(function()
-                    option:SetValue(setting.value)
-                    print("[CONFIG] Đã áp dụng toggle", setting.id, "=", tostring(setting.value))
-                end)
-            elseif setting.type == "dropdown" and option.SetValue then
-                pcall(function()
-                    option:SetValue(setting.value)
-                    print("[CONFIG] Đã áp dụng dropdown", setting.id, "=", tostring(setting.value))
-                end)
-            end
-        else
-            --print("[CONFIG] Không tìm thấy tùy chọn:", setting.id)
-        end
-    end
-    
-    print("[CONFIG] Hoàn thành áp dụng cấu hình")
-    return true
 end
-
--- Thêm biến để theo dõi trạng thái Auto Attack
-ConfigSystem.DefaultConfig.AutoAttackEnabled = false
-
-Tabs.Main:AddToggle("AutoAttackToggle", {
-    Title = "Auto Attack Mobs",
-    Default = ConfigSystem.CurrentConfig.AutoAttackEnabled or false,
-    Callback = function(state)
-        autoAttackEnabled = state
-        ConfigSystem.CurrentConfig.AutoAttackEnabled = state
-        ConfigSystem.SaveConfig()
-        
-        if state then
-            Fluent:Notify({
-                Title = "Auto Attack",
-                Content = "Đã bật tự động tấn công mobs",
-                Duration = 3
-            })
-            
-            -- Bắt đầu vòng lặp auto attack
-            task.spawn(function()
-                while autoAttackEnabled do
-                    local targetEnemy
-                    
-                    -- Kiểm tra xem Farm Selected Mob có đang bật không
-                    if ConfigSystem.CurrentConfig.FarmSelectedMob and selectedMobName ~= "" then
-                        -- Nếu đang farm mob đã chọn, tìm mob đó
-                        targetEnemy = getNearestSelectedEnemy()
-                    else
-                        -- Nếu không, tìm bất kỳ mob nào gần nhất
-                        targetEnemy = getNearestEnemy()
-                    end
-                    
-                    if targetEnemy then
-                        local args = {
-                            [1] = {
-                                [1] = {
-                                    ["Event"] = "PunchAttack",
-                                    ["Enemy"] = targetEnemy.Name
-                                },
-                                [2] = "\4"
-                            }
-                        }
-                        remote:FireServer(unpack(args))
-                    end
-                    task.wait(attackCooldown) -- Chờ giữa các lần tấn công
-                end
-            end)
-        else
-            Fluent:Notify({
-                Title = "Auto Attack",
-                Content = "Đã tắt tự động tấn công mobs",
-                Duration = 3
-            })
-        end
-    end
-})
-
--- Thêm hàm để đảm bảo thư mục tồn tại
-ConfigSystem.EnsureDirectory = function(path)
-    if makefolder and not isfolder then
-        local folders = string.split(path, "/")
-        local currentPath = ""
-        
-        for _, folder in ipairs(folders) do
-            if folder ~= "" then
-                currentPath = currentPath .. folder .. "/"
-                if not isfolder(currentPath) then
-                    makefolder(currentPath)
-                end
-            end
-        end
-    end
-end
-
--- Đảm bảo thư mục tồn tại trước khi tải
-pcall(function()
-    if makefolder and not isfolder("KaihonScriptHub") then
-        makefolder("KaihonScriptHub")
-    end
-end)
 
 -- Tải cấu hình khi khởi động
 ConfigSystem.LoadConfig()
@@ -665,11 +458,9 @@ local attackCooldown = 0.5
 
 Tabs.Main:AddToggle("AutoAttackToggle", {
     Title = "Auto Attack Mobs",
-    Default = ConfigSystem.CurrentConfig.AutoAttackEnabled or false,
+    Default = false,
     Callback = function(state)
         autoAttackEnabled = state
-        ConfigSystem.CurrentConfig.AutoAttackEnabled = state
-        ConfigSystem.SaveConfig()
         
         if state then
             Fluent:Notify({
@@ -1771,45 +1562,10 @@ local function AutoSaveConfig()
     pcall(function()
         SaveManager:Load(configName)
     end)
-    
-    -- Áp dụng cấu hình Fluent
-    pcall(function()
-        ConfigSystem.ApplyConfig()
-    end)
 end
 
 -- Thực thi tự động lưu/tải cấu hình
 AutoSaveConfig()
-setupSaveEvents() -- Thêm dòng này
-
--- Thay đoạn áp dụng cấu hình cuối script
--- Áp dụng cấu hình đã tải sau khi UI được tạo
-task.spawn(function()
-    local checkCount = 0
-    local maxChecks = 10
-    
-    local function checkAndApplyConfig()
-        checkCount = checkCount + 1
-        
-        if Fluent and Fluent.Options and Fluent.Options.FarmSelectedMob then
-            print("[CONFIG] UI đã sẵn sàng, áp dụng cấu hình...")
-            ConfigSystem.ApplyConfig()
-            return true
-        end
-        
-        if checkCount >= maxChecks then
-            print("[CONFIG] Không thể áp dụng cấu hình sau", maxChecks, "lần thử")
-            return false
-        end
-        
-        print("[CONFIG] UI chưa sẵn sàng, thử lại sau 1 giây...")
-        task.wait(1)
-        return checkAndApplyConfig()
-    end
-    
-    task.wait(3) -- Đợi script tải xong
-    checkAndApplyConfig()
-end)
 
 -- Thêm hỗ trợ Mobile UI
 repeat task.wait(0.25) until game:IsLoaded()
