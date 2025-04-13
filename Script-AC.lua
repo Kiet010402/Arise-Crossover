@@ -32,48 +32,15 @@ ConfigSystem.DefaultConfig = {
     AutoBuyEnabled = false,
     AutoScanEnabled = false,
     ScanDelay = 1,
-    SelectedRanks = {}
+    SelectedRanks = {},
 }
 ConfigSystem.CurrentConfig = {}
 
--- Hàm để lưu cấu hình sửa đổi - tương thích tốt hơn
+-- Hàm để lưu cấu hình
 ConfigSystem.SaveConfig = function()
     local success, err = pcall(function()
-        local jsonData = game:GetService("HttpService"):JSONEncode(ConfigSystem.CurrentConfig)
-        
-        -- Thử một trong các executor sử dụng writefile
-        if writefile then
-            writefile(ConfigSystem.FileName, jsonData)
-            return
-        end
-        
-        -- Thử một trong các executor sử dụng saveinstance
-        if saveinstance then
-            saveinstance(ConfigSystem.FileName, jsonData)
-            return
-        end
-        
-        -- Thử với executor Delta
-        if Delta and Delta.SaveFile then
-            Delta.SaveFile(ConfigSystem.FileName, jsonData)
-            return
-        end
-        
-        -- Thử với executor Codex
-        if Codex and Codex.WriteFile then
-            Codex.WriteFile(ConfigSystem.FileName, jsonData)
-            return
-        end
-        
-        -- Thử phương thức khác nếu có
-        if getgenv().write_file then
-            getgenv().write_file(ConfigSystem.FileName, jsonData)
-            return
-        end
-        
-        error("Không tìm thấy phương thức lưu nào phù hợp")
+        writefile(ConfigSystem.FileName, game:GetService("HttpService"):JSONEncode(ConfigSystem.CurrentConfig))
     end)
-    
     if success then
         print("Đã lưu cấu hình thành công!")
     else
@@ -81,108 +48,28 @@ ConfigSystem.SaveConfig = function()
     end
 end
 
--- Hàm để tải cấu hình sửa đổi - tương thích tốt hơn
+-- Hàm để tải cấu hình
 ConfigSystem.LoadConfig = function()
-    local content = nil
-    local success, err = pcall(function()
-        -- Thử một trong các executor sử dụng isfile và readfile
-        if isfile and readfile and isfile(ConfigSystem.FileName) then
-            content = readfile(ConfigSystem.FileName)
-            return
+    local success, content = pcall(function()
+        if isfile(ConfigSystem.FileName) then
+            return readfile(ConfigSystem.FileName)
         end
-        
-        -- Thử một trong các executor sử dụng doesfileexist và readfile
-        if doesfileexist and readfile and doesfileexist(ConfigSystem.FileName) then
-            content = readfile(ConfigSystem.FileName)
-            return
-        end
-        
-        -- Thử với executor Delta
-        if Delta and Delta.ReadFile and Delta.FileExists then
-            if Delta.FileExists(ConfigSystem.FileName) then
-                content = Delta.ReadFile(ConfigSystem.FileName)
-                return
-            end
-        end
-        
-        -- Thử với executor Codex
-        if Codex and Codex.ReadFile and Codex.IsFile then
-            if Codex.IsFile(ConfigSystem.FileName) then
-                content = Codex.ReadFile(ConfigSystem.FileName)
-                return
-            end
-        end
-        
-        -- Thử phương thức khác nếu có
-        if getgenv().read_file and getgenv().file_exists then
-            if getgenv().file_exists(ConfigSystem.FileName) then
-                content = getgenv().read_file(ConfigSystem.FileName)
-                return
-            end
-        end
-        
-        error("Không tìm thấy phương thức đọc nào phù hợp")
+        return nil
     end)
     
     if success and content then
-        local success2, data = pcall(function()
-            return game:GetService("HttpService"):JSONDecode(content)
-        end)
-        
-        if success2 and data then
-            ConfigSystem.CurrentConfig = data
-            print("Đã tải cấu hình thành công!")
-            return true
-        else
-            warn("Phân tích cấu hình thất bại:", (success2 and "Dữ liệu không hợp lệ" or err))
-        end
+        local data = game:GetService("HttpService"):JSONDecode(content)
+        ConfigSystem.CurrentConfig = data
+        return true
     else
-        warn("Tải cấu hình thất bại:", err)
+        ConfigSystem.CurrentConfig = table.clone(ConfigSystem.DefaultConfig)
+        ConfigSystem.SaveConfig()
+        return false
     end
-    
-    -- Nếu tải thất bại, sử dụng cấu hình mặc định
-    ConfigSystem.CurrentConfig = table.clone(ConfigSystem.DefaultConfig)
-    ConfigSystem.SaveConfig()
-    return false
 end
 
 -- Tải cấu hình khi khởi động
 ConfigSystem.LoadConfig()
-
--- Thay đổi cách tải cấu hình
-local function AutoSaveConfig()
-    local configName = "AutoSave_" .. player.Name
-    
-    -- Tự động lưu cấu hình hiện tại với tần suất thấp hơn
-    task.spawn(function()
-        while task.wait(10) do -- Lưu mỗi 10 giây thay vì 5 giây
-            pcall(function()
-                ConfigSystem.SaveConfig()
-            end)
-        end
-    end)
-end
-
--- Thêm event listener để lưu ngay khi thay đổi giá trị
-local function setupSaveEvents()
-    for _, tab in pairs(Tabs) do
-        if tab and tab._components then -- Kiểm tra tab và tab._components có tồn tại không
-            for _, element in pairs(tab._components) do
-                if element and element.OnChanged then -- Kiểm tra element và element.OnChanged có tồn tại không
-                    element.OnChanged:Connect(function()
-                        pcall(function()
-                            -- Đặt timer để tránh lưu quá nhiều
-                            if not ConfigSystem._saveTimer or os.time() - ConfigSystem._saveTimer > 2 then
-                                ConfigSystem.SaveConfig()
-                                ConfigSystem._saveTimer = os.time()
-                            end
-                        end)
-                    end)
-                end
-            end
-        end
-    end
-end
 
 -- Tự động phát hiện HumanoidRootPart mới khi người chơi hồi sinh
 player.CharacterAdded:Connect(function(newCharacter)
@@ -1658,6 +1545,28 @@ Fluent:Notify({
     Duration = 3
 })
 
+-- Thay đổi cách tải cấu hình
+local function AutoSaveConfig()
+    local configName = "AutoSave_" .. playerName
+    
+    -- Tự động lưu cấu hình hiện tại
+    task.spawn(function()
+        while task.wait(5) do -- Lưu mỗi 5 giây
+            pcall(function()
+                SaveManager:Save(configName)
+            end)
+        end
+    end)
+    
+    -- Tải cấu hình đã lưu nếu có
+    pcall(function()
+        SaveManager:Load(configName)
+    end)
+end
+
+-- Thực thi tự động lưu/tải cấu hình
+AutoSaveConfig()
+
 -- Thêm hỗ trợ Mobile UI
 repeat task.wait(0.25) until game:IsLoaded()
 getgenv().Image = "rbxassetid://13099788281" -- ID tài nguyên hình ảnh đã sửa
@@ -1744,17 +1653,13 @@ end
 local function setupSaveEvents()
     for _, tab in pairs(Tabs) do
         if tab and tab._components then -- Kiểm tra tab và tab._components có tồn tại không
-            for _, element in pairs(tab._components) do
+        for _, element in pairs(tab._components) do
                 if element and element.OnChanged then -- Kiểm tra element và element.OnChanged có tồn tại không
-                    element.OnChanged:Connect(function()
-                        pcall(function()
-                            -- Đặt timer để tránh lưu quá nhiều
-                            if not ConfigSystem._saveTimer or os.time() - ConfigSystem._saveTimer > 2 then
-                                ConfigSystem.SaveConfig()
-                                ConfigSystem._saveTimer = os.time()
-                            end
-                        end)
+                element.OnChanged:Connect(function()
+                    pcall(function()
+                        SaveManager:Save("AutoSave_" .. playerName)
                     end)
+                end)
                 end
             end
         end
@@ -2254,82 +2159,3 @@ Tabs.dungeon:AddToggle("TeleportMobs", {
 
 -- Thiết lập biến theo dõi thời gian
 local selectedEnemyFoundTime = nil
-
--- Đảm bảo gọi các hàm khởi tạo cấu hình
-local function InitializeConfig()
-    -- Tải cấu hình từ file
-    local loadSuccess = ConfigSystem.LoadConfig()
-    
-    -- Thông báo trạng thái tải cấu hình
-    if loadSuccess then
-        Fluent:Notify({
-            Title = "Cấu hình đã tải",
-            Content = "Đã tải cấu hình từ file thành công!",
-            Duration = 3
-        })
-    else
-        Fluent:Notify({
-            Title = "Cấu hình mới",
-            Content = "Không tìm thấy cấu hình cũ, đã tạo cấu hình mới",
-            Duration = 3
-        })
-    end
-    
-    -- Áp dụng cấu hình đã tải vào giao diện
-    ApplyConfigToUI()
-    
-    -- Thiết lập tự động lưu cấu hình
-    AutoSaveConfig()
-    
-    -- Thiết lập event lưu khi thay đổi
-    setupSaveEvents()
-end
-
--- Hàm để áp dụng cấu hình vào UI
-local function ApplyConfigToUI()
-    -- Trì hoãn để đảm bảo UI đã được tạo
-    task.wait(1)
-    
-    -- Áp dụng các giá trị từ cấu hình
-    if ConfigSystem.CurrentConfig then
-        -- Cập nhật dropdown chọn Mob nếu có
-        if ConfigSystem.CurrentConfig.SelectedMobName and ConfigSystem.CurrentConfig.SelectedMobName ~= "" then
-            selectedMobName = ConfigSystem.CurrentConfig.SelectedMobName
-            if Fluent.Options.WorldMobDropdown then
-                Fluent.Options.WorldMobDropdown:SetValue(selectedMobName)
-            end
-        end
-        
-        -- Cập nhật Farm Selected Mob toggle
-        if Fluent.Options.FarmSelectedMob and ConfigSystem.CurrentConfig.FarmSelectedMob then
-            Fluent.Options.FarmSelectedMob:SetValue(true)
-            teleportEnabled = true
-            damageEnabled = true
-            task.spawn(teleportToSelectedEnemy)
-        end
-        
-        -- Cập nhật Auto farm (nearest NPCs) toggle
-        if Fluent.Options.TeleportMobs and ConfigSystem.CurrentConfig.AutoFarmNearestNPCs then
-            Fluent.Options.TeleportMobs:SetValue(true)
-            teleportEnabled = true
-            task.spawn(teleportAndTrackDeath)
-        end
-        
-        -- Cập nhật Farming Method
-        if ConfigSystem.CurrentConfig.FarmingMethod and Fluent.Options.MovementMethod then
-            movementMethod = ConfigSystem.CurrentConfig.FarmingMethod
-            local index = (movementMethod == "Teleport") and 2 or 1
-            Fluent.Options.MovementMethod:SetValue(index)
-        end
-        
-        -- Áp dụng các cài đặt khác tại đây...
-        
-        -- In debug log
-        print("Đã áp dụng cấu hình:", ConfigSystem.CurrentConfig.SelectedMobName, 
-              "Farm:", ConfigSystem.CurrentConfig.FarmSelectedMob, 
-              "Method:", ConfigSystem.CurrentConfig.FarmingMethod)
-    end
-end
-
--- Thiết lập cấu hình ngay khi khởi động
-task.spawn(InitializeConfig)
