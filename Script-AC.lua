@@ -267,25 +267,6 @@ local function teleportToSelectedEnemy()
     end
 end
 
-local function attackEnemy()
-    while damageEnabled do
-        local targetEnemy = getNearestEnemy()
-        if targetEnemy then
-            local args = {
-                [1] = {
-                    [1] = {
-                        ["Event"] = "PunchAttack",
-                        ["Enemy"] = targetEnemy.Name
-                    },
-                    [2] = "\4"
-                }
-            }
-            remote:FireServer(unpack(args))
-        end
-        task.wait(1)
-    end
-end
-
 -- Farm Method Selection Dropdown
 local Fluent
 local SaveManager
@@ -329,6 +310,7 @@ local Tabs = {
     mount = Window:AddTab({ Title = "Mount Location/farm", Icon = "" }),
     dungeon = Window:AddTab({ Title = "Dungeon ", Icon = "" }),
     shop = Window:AddTab({ Title = "Shop", Icon = "" }),
+    Player = Window:AddTab({ Title = "Player", Icon = "" }),
     Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
 }
 
@@ -429,56 +411,6 @@ local Dropdown = Tabs.Main:AddDropdown("MovementMethod", {
     end
 })
 
-Tabs.Main:AddToggle("DamageMobs", {
-    Title = "Auto Attack",
-    Default = ConfigSystem.CurrentConfig.DamageMobs or false,
-    Callback = function(state)
-        damageEnabled = state
-        ConfigSystem.CurrentConfig.DamageMobs = state
-        ConfigSystem.SaveConfig()
-        
-        if state then
-            task.spawn(function()
-                while damageEnabled do
-                    -- Lấy kẻ địch gần nhất
-                    local targetEnemy = getNearestEnemy()
-                    if targetEnemy then
-                        -- Gửi remote event để tấn công
-                        local args = {
-                            [1] = {
-                                [1] = {
-                                    ["Event"] = "PunchAttack",
-                                    ["Enemy"] = targetEnemy.Name
-                                },
-                                [2] = "\4"
-                            }
-                        }
-                        remote:FireServer(unpack(args))
-                        
-                        -- Thông báo trong console
-                        print("Auto Attack: Đang tấn công", targetEnemy.Name)
-                    end
-                    task.wait(0.5) -- Đợi 0.5 giây giữa các lần tấn công
-                end
-            end)
-        else
-            print("Auto Attack: Đã tắt")
-        end
-    end
-})
-
-Tabs.dungeon:AddToggle("TeleportMobs", { 
-    Title = "Auto farm Dungeon", 
-    Default = false, 
-    Flag = "AutoFarmDungeon", -- Thêm Flag để lưu cấu hình
-    Callback = function(state) 
-        teleportEnabled = state 
-        if state then 
-            task.spawn(teleportDungeon) 
-        end 
-    end 
-})
-
 Tabs.Main:AddToggle("GamepassShadowFarm", {
     Title = "Gamepass Shadow farm",
     Default = false,
@@ -496,6 +428,52 @@ Tabs.Main:AddToggle("GamepassShadowFarm", {
             -- Tắt tính năng
             attackatri:SetAttribute("AutoAttack", false)
             print("Shadow farm đã tắt")
+        end
+    end
+})
+
+-- Thêm Auto Attack toggle
+local autoAttackEnabled = false
+local attackCooldown = 0.5
+
+Tabs.Main:AddToggle("AutoAttackToggle", {
+    Title = "Auto Attack Mobs",
+    Default = false,
+    Callback = function(state)
+        autoAttackEnabled = state
+        
+        if state then
+            Fluent:Notify({
+                Title = "Auto Attack",
+                Content = "Đã bật tự động tấn công mobs",
+                Duration = 3
+            })
+            
+            -- Bắt đầu vòng lặp auto attack
+            task.spawn(function()
+                while autoAttackEnabled do
+                    local targetEnemy = getNearestEnemy()
+                    if targetEnemy then
+                        local args = {
+                            [1] = {
+                                [1] = {
+                                    ["Event"] = "PunchAttack",
+                                    ["Enemy"] = targetEnemy.Name
+                                },
+                                [2] = "\4"
+                            }
+                        }
+                        remote:FireServer(unpack(args))
+                    end
+                    task.wait(attackCooldown) -- Chờ giữa các lần tấn công
+                end
+            end)
+        else
+            Fluent:Notify({
+                Title = "Auto Attack",
+                Content = "Đã tắt tự động tấn công mobs",
+                Duration = 3
+            })
         end
     end
 })
@@ -952,6 +930,248 @@ task.spawn(function()
     end
 end)
 
+local VirtualUser = game:GetService("VirtualUser")
+local LocalPlayer = game:GetService("Players").LocalPlayer
+
+local antiAfkConnection
+
+local AntiAfkToggle = Tabs.Player:AddToggle("AntiAfk", {
+    Title = "Anti AFK",
+    Default = false,
+    Callback = function(enabled)
+        if enabled then
+            print("Đã bật Anti AFK")
+            -- Đảm bảo không tạo nhiều kết nối
+            if not antiAfkConnection then
+                antiAfkConnection = LocalPlayer.Idled:Connect(function()
+                    VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+                    task.wait(1) -- Thời gian chờ có thể điều chỉnh
+                    VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+                end)
+            end
+        else
+            print("Đã tắt Anti AFK")
+            -- Ngắt kết nối sự kiện khi tắt
+            if antiAfkConnection then
+                antiAfkConnection:Disconnect()
+                antiAfkConnection = nil -- Đặt lại biến kết nối
+            end
+        end
+    end
+})
+
+Tabs.Player:AddButton({
+    Title = "Boost FPS",
+    Description = "Lowers graphics",
+    Callback = function()
+        local Optimizer = {Enabled = false}
+
+        local function DisableEffects()
+            for _, v in pairs(game:GetDescendants()) do
+                if v:IsA("ParticleEmitter") or v:IsA("Smoke") or v:IsA("Fire") or v:IsA("Sparkles") then
+                    v.Enabled = not Optimizer.Enabled
+                end
+                if v:IsA("PostEffect") or v:IsA("BloomEffect") or v:IsA("BlurEffect") or v:IsA("SunRaysEffect") then
+                    v.Enabled = not Optimizer.Enabled
+                end
+            end
+        end
+
+        local function MaximizePerformance()
+            local lighting = game:GetService("Lighting")
+            if Optimizer.Enabled then
+                lighting.GlobalShadows = false
+                lighting.FogEnd = 9e9
+                lighting.Brightness = 2
+                settings().Rendering.QualityLevel = 1
+                settings().Physics.PhysicsEnvironmentalThrottle = 1
+                settings().Rendering.MeshPartDetailLevel = Enum.MeshPartDetailLevel.Level01
+                settings().Physics.AllowSleep = true
+                settings().Physics.ForceCSGv2 = false
+                settings().Physics.DisableCSGv2 = true
+                settings().Rendering.EagerBulkExecution = true
+
+                game:GetService("StarterGui"):SetCore("TopbarEnabled", false)
+
+                settings().Network.IncomingReplicationLag = 0
+                settings().Rendering.MaxPartCount = 100000
+            else
+                lighting.GlobalShadows = true
+                lighting.FogEnd = 100000
+                lighting.Brightness = 3
+                settings().Rendering.QualityLevel = 7
+                settings().Physics.PhysicsEnvironmentalThrottle = 0
+                settings().Rendering.MeshPartDetailLevel = Enum.MeshPartDetailLevel.Level04
+                settings().Physics.AllowSleep = false
+                settings().Physics.ForceCSGv2 = true
+                settings().Physics.DisableCSGv2 = false
+                settings().Rendering.EagerBulkExecution = false
+
+                game:GetService("StarterGui"):SetCore("TopbarEnabled", true)
+
+                settings().Network.IncomingReplicationLag = 1
+                settings().Rendering.MaxPartCount = 500000
+            end
+        end
+
+        local function OptimizeInstances()
+            for _, v in pairs(game:GetDescendants()) do
+                if v:IsA("BasePart") then
+                    v.CastShadow = not Optimizer.Enabled
+                    v.Reflectance = Optimizer.Enabled and 0 or v.Reflectance
+                    v.Material = Optimizer.Enabled and Enum.Material.SmoothPlastic or v.Material
+                end
+                if v:IsA("Decal") or v:IsA("Texture") then
+                    v.Transparency = Optimizer.Enabled and 1 or 0
+                end
+                if v:IsA("MeshPart") then
+                    v.RenderFidelity = Optimizer.Enabled and Enum.RenderFidelity.Performance or Enum.RenderFidelity.Precise
+                end
+            end
+
+            game:GetService("Debris"):SetAutoCleanupEnabled(true)
+        end
+
+        local function CleanMemory()
+            if Optimizer.Enabled then
+                game:GetService("Debris"):AddItem(Instance.new("Model"), 0)
+                settings().Physics.ThrottleAdjustTime = 2
+                game:GetService("RunService"):Set3dRenderingEnabled(false)
+            else
+                game:GetService("RunService"):Set3dRenderingEnabled(true)
+            end
+        end
+
+        local function ToggleOptimizer()
+            Optimizer.Enabled = not Optimizer.Enabled
+            DisableEffects()
+            MaximizePerformance()
+            OptimizeInstances()
+            CleanMemory()
+            print("FPS Booster: " .. (Optimizer.Enabled and "ON" or "OFF"))
+        end
+
+        game:GetService("UserInputService").InputBegan:Connect(function(input)
+            if input.KeyCode == Enum.KeyCode.RightControl then
+                ToggleOptimizer()
+            end
+        end)
+
+        ToggleOptimizer()
+
+        game:GetService("RunService").Heartbeat:Connect(function()
+            if Optimizer.Enabled then
+                CleanMemory()
+            end
+        end)
+    end
+})
+
+
+
+local TweenService = game:GetService("TweenService")
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local hrp = character:WaitForChild("HumanoidRootPart")
+
+local targetCFrame = CFrame.new(
+    3648.76318, 223.552261, 2637.36719, 
+    0.846323907, 7.72367986e-18, -0.532668591, 
+    -1.10462046e-17, 1, -3.05065368e-18, 
+    0.532668591, 8.46580728e-18, 0.846323907
+)
+
+local function tweenToPivot()
+    hrp.CFrame = targetCFrame
+end
+
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+local speedValue = 16 -- Tốc độ di chuyển mặc định
+local jumpValue = 50  -- Lực nhảy mặc định
+local speedEnabled = false
+local jumpEnabled = false
+
+local function updateCharacter()
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        local humanoid = LocalPlayer.Character.Humanoid
+        humanoid.WalkSpeed = speedEnabled and speedValue or 16
+        humanoid.JumpPower = jumpEnabled and jumpValue or 50
+    end
+end
+
+-- Nhập tốc độ
+local SpeedInput = Tabs.Player:AddInput("SpeedInput", {
+    Title = "Speed",
+    Default = tostring(speedValue),
+    Placeholder = "Enter speed",
+    Numeric = true,
+    Finished = true, 
+    Callback = function(Value)
+        speedValue = tonumber(Value) or 16
+        updateCharacter() -- Cập nhật nhân vật ngay lập tức khi tốc độ thay đổi
+    end
+})
+
+-- Nhập lực nhảy
+local JumpInput = Tabs.Player:AddInput("JumpInput", {
+    Title = "Jump Power",
+    Default = tostring(jumpValue),
+    Placeholder = "Enter jump power",
+    Numeric = true,
+    Finished = true, 
+    Callback = function(Value)
+        jumpValue = tonumber(Value) or 50
+        updateCharacter() -- Cập nhật nhân vật ngay lập tức khi lực nhảy thay đổi
+    end
+})
+
+-- Bật/tắt tốc độ
+local SpeedToggle = Tabs.Player:AddToggle("SpeedToggle", {
+    Title = "Enable Speed",
+    Default = false
+})
+
+SpeedToggle:OnChanged(function(Value)
+    speedEnabled = Value
+    updateCharacter() -- Cập nhật nhân vật ngay lập tức khi toggle thay đổi
+end)
+
+-- Bật/tắt lực nhảy
+local JumpToggle = Tabs.Player:AddToggle("JumpToggle", {
+    Title = "Enable Jump Power",
+    Default = false
+})
+
+JumpToggle:OnChanged(function(Value)
+    jumpEnabled = Value
+    updateCharacter() -- Cập nhật nhân vật ngay lập tức khi toggle thay đổi
+end)
+
+-- Cập nhật nhân vật khi hồi sinh
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1) -- Đợi nhân vật tải xong
+    updateCharacter()
+end)
+
+-- Cập nhật ban đầu
+updateCharacter()
+
+local player = game.Players.LocalPlayer
+
+local function tweenCharacter(targetCFrame)
+    if player and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        local hrp = player.Character.HumanoidRootPart
+        local tweenService = game:GetService("TweenService")
+        local tweenInfo = TweenInfo.new(3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local tween = tweenService:Create(hrp, tweenInfo, {CFrame = targetCFrame})
+        tween:Play()
+    end
+end
+
 -- Thêm nút
 Tabs.tp:AddButton({
     Title = "Tween to Dedu island",
@@ -991,6 +1211,53 @@ NoClipToggle:OnChanged(function(Value)
         end
     end
 end)
+
+
+
+Tabs.Player:AddButton({
+    Title = "Server Hop",
+    Description = "Switches to a different server",
+    Callback = function()
+        local PlaceID = game.PlaceId
+        local AllIDs = {}
+        local foundAnything = ""
+        local actualHour = os.date("!*t").hour
+        local File = pcall(function()
+            AllIDs = game:GetService('HttpService'):JSONDecode(readfile("NotSameServers.json"))
+        end)
+        if not File then
+            table.insert(AllIDs, actualHour)
+            writefile("NotSameServers.json", game:GetService('HttpService'):JSONEncode(AllIDs))
+        end
+        local function TPReturner()
+            local Site
+            if foundAnything == "" then
+                Site = game.HttpService:JSONDecode(game:HttpGet('https://games.roblox.com/v1/games/' .. PlaceID .. '/servers/Public?sortOrder=Asc&limit=100'))
+            else
+                Site = game.HttpService:JSONDecode(game:HttpGet('https://games.roblox.com/v1/games/' .. PlaceID .. '/servers/Public?sortOrder=Asc&limit=100&cursor=' .. foundAnything))
+            end
+            for _, v in pairs(Site.data) do
+                if tonumber(v.maxPlayers) > tonumber(v.playing) then
+                    local ID = tostring(v.id)
+                    local isNewServer = true
+                    for _, existing in pairs(AllIDs) do
+                        if ID == tostring(existing) then
+                            isNewServer = false
+                            break
+                        end
+                    end
+                    if isNewServer then
+                        table.insert(AllIDs, ID)
+                        writefile("NotSameServers.json", game:GetService('HttpService'):JSONEncode(AllIDs))
+                        game:GetService("TeleportService"):TeleportToPlaceInstance(PlaceID, ID, game.Players.LocalPlayer)
+                        return
+                    end
+                end
+            end
+        end
+        TPReturner()
+    end
+})
 
 
 
@@ -1354,23 +1621,19 @@ end
 
 -- Thêm event listener để lưu ngay khi thay đổi giá trị
 local function setupSaveEvents()
-    pcall(function()
-        for tabName, tab in pairs(Tabs) do
-            if tab and type(tab) == "table" and tab._components then
-                for _, element in pairs(tab._components) do
-                    if element and type(element) == "table" and element.OnChanged then
-                        pcall(function()
-                            element.OnChanged:Connect(function()
-                                pcall(function()
-                                    SaveManager:Save("AutoSave_" .. playerName)
-                                end)
-                            end)
-                        end)
-                    end
+    for _, tab in pairs(Tabs) do
+        if tab and tab._components then -- Kiểm tra tab và tab._components có tồn tại không
+        for _, element in pairs(tab._components) do
+                if element and element.OnChanged then -- Kiểm tra element và element.OnChanged có tồn tại không
+                element.OnChanged:Connect(function()
+                    pcall(function()
+                        SaveManager:Save("AutoSave_" .. playerName)
+                    end)
+                end)
                 end
             end
         end
-    end)
+    end
 end
 
 -- Thực thi tự động lưu/tải cấu hình
@@ -1849,4 +2112,17 @@ Tabs.shop:AddToggle("AutoSellToggle", {
             end
         end
     end
+})
+
+-- Khôi phục lại tab Auto farm Dungeon
+Tabs.dungeon:AddToggle("TeleportMobs", { 
+    Title = "Auto farm Dungeon", 
+    Default = false, 
+    Flag = "AutoFarmDungeon", -- Thêm Flag để lưu cấu hình
+    Callback = function(state) 
+        teleportEnabled = state 
+        if state then 
+            task.spawn(teleportDungeon) 
+        end 
+    end 
 })
