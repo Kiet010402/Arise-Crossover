@@ -342,7 +342,8 @@ local mobsByWorld = {
     ["BleachWorld"] = {"Luryu", "Fyakuya", "Genji"},
     ["BCWorld"] = {"Sortudo", "Michille", "Wind"},
     ["ChainsawWorld"] = {"Heaven", "Zere", "Ika"},
-    ["JojoWorld"] = {"Diablo", "Gosuke", "Golyne"}
+    ["JojoWorld"] = {"Diablo", "Gosuke", "Golyne"},
+    ["DBWorld"] = {"Turtle", "Green", "Sky"}
 }
 
 local selectedWorld = "SoloWorld" -- Default world
@@ -592,10 +593,15 @@ Tabs.tp:AddButton({
     end
 })
 
+Tabs.tp:AddButton({
+    Title = "Dragon City",
+    Description = "Set spawn & reset",
+    Callback = function()
+        SetSpawnAndReset("DBWorld")
+    end
+})
+
 local TweenService = game:GetService("TweenService")
-
-
-
 
 
 -- Lấy Player và HumanoidRootPart
