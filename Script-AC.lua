@@ -18,7 +18,11 @@ local farmingStyle = "Default" -- Phong cách farm mặc định
 
 -- Hệ thống lưu trữ mới
 local ConfigSystem = {}
-ConfigSystem.FileName = "AriseConfigV2_" .. player.Name .. ".json"
+local HttpService = game:GetService("HttpService")
+ConfigSystem.Folder = "KaihonScriptHub"
+ConfigSystem.SubFolder = "AriseCrossover"
+ConfigSystem.FileName = player.Name .. "_Config.json"
+ConfigSystem.FilePath = ConfigSystem.Folder .. "/" .. ConfigSystem.SubFolder .. "/" .. ConfigSystem.FileName
 ConfigSystem.DefaultConfig = {
     SelectedMobName = "",
     FarmSelectedMob = false,
@@ -37,18 +41,69 @@ ConfigSystem.DefaultConfig = {
 }
 ConfigSystem.CurrentConfig = {}
 
--- Hàm để lưu cấu hình
+-- Hàm tạo thư mục nếu không tồn tại
+ConfigSystem.CreateFolders = function()
+    -- Thử các phương thức khác nhau để tạo thư mục trên nhiều executor
+    local success = pcall(function()
+        if makefolder then
+            if not isfolder(ConfigSystem.Folder) then
+                makefolder(ConfigSystem.Folder)
+            end
+            
+            if not isfolder(ConfigSystem.Folder .. "/" .. ConfigSystem.SubFolder) then
+                makefolder(ConfigSystem.Folder .. "/" .. ConfigSystem.SubFolder)
+            end
+        end
+    end)
+    
+    return success
+end
+
+-- Hàm để lưu cấu hình (thử nhiều phương thức)
 ConfigSystem.SaveConfig = function()
+    -- Đảm bảo thư mục tồn tại
+    ConfigSystem.CreateFolders()
+    
+    -- Mã hóa cấu hình thành chuỗi JSON
+    local jsonData = HttpService:JSONEncode(ConfigSystem.CurrentConfig)
+    
+    -- Thử các phương thức lưu khác nhau
     local success, err = pcall(function()
+        -- Phương thức 1: writefile trực tiếp (Synapse X, KRNL, Script-Ware)
         if writefile then
-            writefile(ConfigSystem.FileName, game:GetService("HttpService"):JSONEncode(ConfigSystem.CurrentConfig))
+            writefile(ConfigSystem.FilePath, jsonData)
             return true
         end
+        
+        -- Phương thức 2: Sử dụng SaveInstance (một số executor khác)
+        if saveinstance then
+            saveinstance(ConfigSystem.FilePath, jsonData)
+            return true
+        end
+        
+        -- Phương thức 3: Fluxus và một số executor khác
+        if fluxus and fluxus.save_file then
+            fluxus.save_file(ConfigSystem.FilePath, jsonData)
+            return true
+        end
+        
+        -- Phương thức 4: Delta và một số executor khác
+        if delta_config and delta_config.save then
+            delta_config.save(ConfigSystem.FilePath, jsonData)
+            return true
+        end
+        
+        -- Phương thức 5: Codex
+        if writefile and getrenv().writefile then
+            getrenv().writefile(ConfigSystem.FilePath, jsonData)
+            return true
+        end
+        
         return false
     end)
     
     if success then
-        print("Đã lưu cấu hình thành công!")
+        print("Đã lưu cấu hình thành công vào: " .. ConfigSystem.FilePath)
         return true
     else
         warn("Lưu cấu hình thất bại:", err)
@@ -56,32 +111,59 @@ ConfigSystem.SaveConfig = function()
     end
 end
 
--- Hàm để tải cấu hình
+-- Hàm để tải cấu hình (thử nhiều phương thức)
 ConfigSystem.LoadConfig = function()
+    -- Thử các phương thức đọc khác nhau
     local success, content = pcall(function()
-        if readfile and isfile and isfile(ConfigSystem.FileName) then
-            return readfile(ConfigSystem.FileName)
+        -- Phương thức 1: readfile chuẩn (Synapse X, KRNL, Script-Ware)
+        if readfile and isfile and isfile(ConfigSystem.FilePath) then
+            return readfile(ConfigSystem.FilePath)
         end
+        
+        -- Phương thức 2: Fluxus
+        if fluxus and fluxus.read_file and fluxus.file_exists and fluxus.file_exists(ConfigSystem.FilePath) then
+            return fluxus.read_file(ConfigSystem.FilePath)
+        end
+        
+        -- Phương thức 3: Delta
+        if delta_config and delta_config.load and delta_config.exists and delta_config.exists(ConfigSystem.FilePath) then
+            return delta_config.load(ConfigSystem.FilePath)
+        end
+        
+        -- Phương thức 4: Codex
+        if readfile and getrenv().readfile and isfile and getrenv().isfile and getrenv().isfile(ConfigSystem.FilePath) then
+            return getrenv().readfile(ConfigSystem.FilePath)
+        end
+        
         return nil
     end)
     
     if success and content then
-        local data = game:GetService("HttpService"):JSONDecode(content)
-        ConfigSystem.CurrentConfig = data
-        print("Đã tải cấu hình từ file")
-        return true
-    else
-        ConfigSystem.CurrentConfig = table.clone(ConfigSystem.DefaultConfig)
-        ConfigSystem.SaveConfig()
-        print("Khởi tạo cấu hình mới")
-        return false
+        local data
+        success, data = pcall(function()
+            return HttpService:JSONDecode(content)
+        end)
+        
+        if success and data then
+            ConfigSystem.CurrentConfig = data
+            print("Đã tải cấu hình từ: " .. ConfigSystem.FilePath)
+            return true
+        else
+            warn("Lỗi khi phân tích cấu hình, tạo mới.")
+        end
     end
+    
+    -- Nếu không đọc được hoặc có lỗi, tạo cấu hình mặc định
+    ConfigSystem.CurrentConfig = table.clone(ConfigSystem.DefaultConfig)
+    ConfigSystem.SaveConfig()
+    print("Khởi tạo cấu hình mới")
+    return false
 end
 
 -- Tạo một hệ thống auto save riêng
 local function setupAutoSave()
     spawn(function()
-        while wait(10) do -- Lưu mỗi 10 giây
+        while wait(5) do -- Lưu mỗi 30 giây
             pcall(function()
                 ConfigSystem.SaveConfig()
             end)
@@ -108,6 +190,15 @@ local function setupSaveEvents()
             end
         end
     end
+end
+
+-- Thiết lập SaveManager của Fluent để tương thích
+local playerName = game:GetService("Players").LocalPlayer.Name
+if InterfaceManager then
+    InterfaceManager:SetFolder("KaihonScriptHub")
+end
+if SaveManager then
+    SaveManager:SetFolder("KaihonScriptHub/AriseCrossover/" .. playerName)
 end
 
 -- Tự động phát hiện HumanoidRootPart mới khi người chơi hồi sinh
