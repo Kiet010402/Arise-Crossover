@@ -33,25 +33,33 @@ ConfigSystem.DefaultConfig = {
     AutoScanEnabled = false,
     ScanDelay = 1,
     SelectedRanks = {},
+    AutoSellEnabled = false
 }
 ConfigSystem.CurrentConfig = {}
 
 -- Hàm để lưu cấu hình
 ConfigSystem.SaveConfig = function()
     local success, err = pcall(function()
-        writefile(ConfigSystem.FileName, game:GetService("HttpService"):JSONEncode(ConfigSystem.CurrentConfig))
+        if writefile then
+            writefile(ConfigSystem.FileName, game:GetService("HttpService"):JSONEncode(ConfigSystem.CurrentConfig))
+            return true
+        end
+        return false
     end)
+    
     if success then
         print("Đã lưu cấu hình thành công!")
+        return true
     else
         warn("Lưu cấu hình thất bại:", err)
+        return false
     end
 end
 
 -- Hàm để tải cấu hình
 ConfigSystem.LoadConfig = function()
     local success, content = pcall(function()
-        if isfile(ConfigSystem.FileName) then
+        if readfile and isfile and isfile(ConfigSystem.FileName) then
             return readfile(ConfigSystem.FileName)
         end
         return nil
@@ -60,16 +68,47 @@ ConfigSystem.LoadConfig = function()
     if success and content then
         local data = game:GetService("HttpService"):JSONDecode(content)
         ConfigSystem.CurrentConfig = data
+        print("Đã tải cấu hình từ file")
         return true
     else
         ConfigSystem.CurrentConfig = table.clone(ConfigSystem.DefaultConfig)
         ConfigSystem.SaveConfig()
+        print("Khởi tạo cấu hình mới")
         return false
     end
 end
 
+-- Tạo một hệ thống auto save riêng
+local function setupAutoSave()
+    spawn(function()
+        while wait(10) do -- Lưu mỗi 10 giây
+            pcall(function()
+                ConfigSystem.SaveConfig()
+            end)
+        end
+    end)
+end
+
 -- Tải cấu hình khi khởi động
 ConfigSystem.LoadConfig()
+setupAutoSave() -- Bắt đầu auto save
+
+-- Cập nhật hàm để lưu ngay khi thay đổi giá trị
+local function setupSaveEvents()
+    for _, tab in pairs(Tabs) do
+        if tab and tab._components then
+            for _, element in pairs(tab._components) do
+                if element and element.OnChanged then
+                    element.OnChanged:Connect(function()
+                        pcall(function()
+                            ConfigSystem.SaveConfig()
+                        end)
+                    end)
+                end
+            end
+        end
+    end
+end
 
 -- Tự động phát hiện HumanoidRootPart mới khi người chơi hồi sinh
 player.CharacterAdded:Connect(function(newCharacter)
