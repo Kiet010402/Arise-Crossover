@@ -376,10 +376,8 @@ Tabs.Main:AddToggle("FarmSelectedMob", {
     Default = ConfigSystem.CurrentConfig.FarmSelectedMob or false,
     Callback = function(state)
         teleportEnabled = state
-        damageEnabled = state -- Đảm bảo tính năng tấn công mobs được kích hoạt
         ConfigSystem.CurrentConfig.FarmSelectedMob = state
         ConfigSystem.SaveConfig()
-        killedNPCs = {} -- Đặt lại danh sách NPC đã tiêu diệt khi bắt đầu farm
         if state then
             task.spawn(teleportToSelectedEnemy)
         end
