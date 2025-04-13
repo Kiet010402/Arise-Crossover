@@ -163,7 +163,7 @@ end
 -- Tạo một hệ thống auto save riêng
 local function setupAutoSave()
     spawn(function()
-        while wait(5) do -- Lưu mỗi 30 giây
+        while wait(5) do -- Lưu mỗi 5 giây
             pcall(function()
                 ConfigSystem.SaveConfig()
             end)
@@ -472,7 +472,8 @@ local mobsByWorld = {
     ["BleachWorld"] = {"Luryu", "Fyakuya", "Genji"},
     ["BCWorld"] = {"Sortudo", "Michille", "Wind"},
     ["ChainsawWorld"] = {"Heaven", "Zere", "Ika"},
-    ["JojoWorld"] = {"Diablo", "Gosuke", "Golyne"}
+    ["JojoWorld"] = {"Diablo", "Gosuke", "Golyne"},
+    ["DBWorld"] = {"Turtle", "Green", "Sky"}
 }
 
 local selectedWorld = "SoloWorld" -- Default world
@@ -480,7 +481,7 @@ local selectedWorld = "SoloWorld" -- Default world
 -- Dropdown để chọn World/Map
 Tabs.Main:AddDropdown("WorldDropdown", {
     Title = "Select World",
-    Values = {"SoloWorld", "NarutoWorld", "OPWorld", "BleachWorld", "BCWorld", "ChainsawWorld", "JojoWorld"},
+    Values = {"SoloWorld", "NarutoWorld", "OPWorld", "BleachWorld", "BCWorld", "ChainsawWorld", "JojoWorld", "DBWorld"},
     Multi = false,
     Default = selectedWorld,
     Callback = function(world)
@@ -719,6 +720,14 @@ Tabs.tp:AddButton({
     Description = "Set spawn & reset",
     Callback = function()
         SetSpawnAndReset("JojoWorld")
+    end
+})
+
+Tabs.tp:AddButton({
+    Title = "Dragon City",
+    Description = "Set spawn & reset",
+    Callback = function()
+        SetSpawnAndReset("DBWorld")
     end
 })
 
