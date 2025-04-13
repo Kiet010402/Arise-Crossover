@@ -343,7 +343,7 @@ local mobsByWorld = {
     ["BCWorld"] = {"Sortudo", "Michille", "Wind"},
     ["ChainsawWorld"] = {"Heaven", "Zere", "Ika"},
     ["JojoWorld"] = {"Diablo", "Gosuke", "Golyne"},
-    ["DBWorld"] = {"Turtle", "Green", "Sky"}
+    ["DBWorld"] = {"Turtle", "Green", "Sky"},
 }
 
 local selectedWorld = "SoloWorld" -- Default world
