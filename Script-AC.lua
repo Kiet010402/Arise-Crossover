@@ -2254,3 +2254,82 @@ Tabs.dungeon:AddToggle("TeleportMobs", {
 
 -- Thiết lập biến theo dõi thời gian
 local selectedEnemyFoundTime = nil
+
+-- Đảm bảo gọi các hàm khởi tạo cấu hình
+local function InitializeConfig()
+    -- Tải cấu hình từ file
+    local loadSuccess = ConfigSystem.LoadConfig()
+    
+    -- Thông báo trạng thái tải cấu hình
+    if loadSuccess then
+        Fluent:Notify({
+            Title = "Cấu hình đã tải",
+            Content = "Đã tải cấu hình từ file thành công!",
+            Duration = 3
+        })
+    else
+        Fluent:Notify({
+            Title = "Cấu hình mới",
+            Content = "Không tìm thấy cấu hình cũ, đã tạo cấu hình mới",
+            Duration = 3
+        })
+    end
+    
+    -- Áp dụng cấu hình đã tải vào giao diện
+    ApplyConfigToUI()
+    
+    -- Thiết lập tự động lưu cấu hình
+    AutoSaveConfig()
+    
+    -- Thiết lập event lưu khi thay đổi
+    setupSaveEvents()
+end
+
+-- Hàm để áp dụng cấu hình vào UI
+local function ApplyConfigToUI()
+    -- Trì hoãn để đảm bảo UI đã được tạo
+    task.wait(1)
+    
+    -- Áp dụng các giá trị từ cấu hình
+    if ConfigSystem.CurrentConfig then
+        -- Cập nhật dropdown chọn Mob nếu có
+        if ConfigSystem.CurrentConfig.SelectedMobName and ConfigSystem.CurrentConfig.SelectedMobName ~= "" then
+            selectedMobName = ConfigSystem.CurrentConfig.SelectedMobName
+            if Fluent.Options.WorldMobDropdown then
+                Fluent.Options.WorldMobDropdown:SetValue(selectedMobName)
+            end
+        end
+        
+        -- Cập nhật Farm Selected Mob toggle
+        if Fluent.Options.FarmSelectedMob and ConfigSystem.CurrentConfig.FarmSelectedMob then
+            Fluent.Options.FarmSelectedMob:SetValue(true)
+            teleportEnabled = true
+            damageEnabled = true
+            task.spawn(teleportToSelectedEnemy)
+        end
+        
+        -- Cập nhật Auto farm (nearest NPCs) toggle
+        if Fluent.Options.TeleportMobs and ConfigSystem.CurrentConfig.AutoFarmNearestNPCs then
+            Fluent.Options.TeleportMobs:SetValue(true)
+            teleportEnabled = true
+            task.spawn(teleportAndTrackDeath)
+        end
+        
+        -- Cập nhật Farming Method
+        if ConfigSystem.CurrentConfig.FarmingMethod and Fluent.Options.MovementMethod then
+            movementMethod = ConfigSystem.CurrentConfig.FarmingMethod
+            local index = (movementMethod == "Teleport") and 2 or 1
+            Fluent.Options.MovementMethod:SetValue(index)
+        end
+        
+        -- Áp dụng các cài đặt khác tại đây...
+        
+        -- In debug log
+        print("Đã áp dụng cấu hình:", ConfigSystem.CurrentConfig.SelectedMobName, 
+              "Farm:", ConfigSystem.CurrentConfig.FarmSelectedMob, 
+              "Method:", ConfigSystem.CurrentConfig.FarmingMethod)
+    end
+end
+
+-- Thiết lập cấu hình ngay khi khởi động
+task.spawn(InitializeConfig)
