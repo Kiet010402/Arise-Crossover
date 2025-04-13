@@ -92,7 +92,7 @@ ConfigSystem.SaveConfig = function()
     end
 end
 
--- Hàm để tải cấu hình
+-- Thay đổi hàm LoadConfig để áp dụng cấu hình khi tải
 ConfigSystem.LoadConfig = function()
     local success, content = pcall(function()
         if fileAPI.isfile and fileAPI.isfile(ConfigSystem.FileName) then
@@ -108,10 +108,13 @@ ConfigSystem.LoadConfig = function()
         
         if dataSuccess and data then
             ConfigSystem.CurrentConfig = data
+            print("[CONFIG] Đã tải cấu hình thành công từ:", ConfigSystem.FileName)
             return true
         else
-            warn("Lỗi khi phân tích dữ liệu JSON:", data)
+            warn("[CONFIG] Lỗi khi phân tích dữ liệu JSON:", tostring(data))
         end
+    else
+        print("[CONFIG] Không tìm thấy file cấu hình, tạo mới")
     end
     
     -- Nếu không thể tải cấu hình, tạo mới
@@ -119,6 +122,123 @@ ConfigSystem.LoadConfig = function()
     ConfigSystem.SaveConfig()
     return false
 end
+
+-- Thêm hàm để áp dụng cấu hình vào UI
+ConfigSystem.ApplyConfig = function()
+    print("[CONFIG] Đang áp dụng cấu hình vào UI...")
+    
+    -- Danh sách các toggle và dropdown cần áp dụng
+    local configSettings = {
+        -- Tab Main
+        {type = "toggle", id = "FarmSelectedMob", value = ConfigSystem.CurrentConfig.FarmSelectedMob},
+        {type = "toggle", id = "TeleportMobs", value = ConfigSystem.CurrentConfig.AutoFarmNearestNPCs},
+        {type = "dropdown", id = "MovementMethod", value = ConfigSystem.CurrentConfig.FarmingMethod == "Teleport" and 2 or 1},
+        {type = "toggle", id = "GamepassShadowFarm", value = false}, -- Không lưu trạng thái này vì nó liên quan đến gamepass
+        {type = "toggle", id = "AutoAttackToggle", value = ConfigSystem.CurrentConfig.AutoAttackEnabled or false},
+        
+        -- Tab Main - World và Mob
+        {type = "dropdown", id = "WorldDropdown", value = ConfigSystem.CurrentConfig.SelectedWorld},
+        {type = "dropdown", id = "WorldMobDropdown", value = ConfigSystem.CurrentConfig.SelectedMobName},
+        
+        -- Tab Main - Auto Destroy/Arise
+        {type = "toggle", id = "AutoDestroy", value = ConfigSystem.CurrentConfig.MainAutoDestroy},
+        {type = "toggle", id = "AutoArise", value = ConfigSystem.CurrentConfig.MainAutoArise},
+        
+        -- Tab Shop - Buy Weapon
+        {type = "dropdown", id = "ShopDropdown", value = ConfigSystem.CurrentConfig.SelectedShop},
+        {type = "dropdown", id = "WeaponDropdown", value = ConfigSystem.CurrentConfig.SelectedWeapon},
+        {type = "toggle", id = "AutoBuyToggle", value = ConfigSystem.CurrentConfig.AutoBuyEnabled},
+        
+        -- Tab Shop - Update Weapon
+        {type = "dropdown", id = "WeaponTypeDropdown", value = ConfigSystem.CurrentConfig.SelectedWeaponType},
+        {type = "toggle", id = "AutoSelectToggle", value = ConfigSystem.CurrentConfig.AutoSelectedEnabled},
+        
+        -- Tab Shop - Sell Pet
+        {type = "dropdown", id = "RankDropdown", value = ConfigSystem.CurrentConfig.SelectedRanks},
+        {type = "toggle", id = "AutoSellToggle", value = ConfigSystem.CurrentConfig.AutoSellEnabled}
+    }
+    
+    -- Áp dụng cấu hình vào UI
+    for _, setting in ipairs(configSettings) do
+        if Fluent and Fluent.Options and Fluent.Options[setting.id] then
+            local option = Fluent.Options[setting.id]
+            
+            if setting.type == "toggle" and option.SetValue then
+                pcall(function()
+                    option:SetValue(setting.value)
+                    print("[CONFIG] Đã áp dụng toggle", setting.id, "=", setting.value)
+                end)
+            elseif setting.type == "dropdown" and option.SetValue then
+                pcall(function()
+                    option:SetValue(setting.value)
+                    print("[CONFIG] Đã áp dụng dropdown", setting.id, "=", setting.value)
+                end)
+            end
+        else
+            -- print("[CONFIG] Không tìm thấy tùy chọn:", setting.id)
+        end
+    end
+    
+    print("[CONFIG] Hoàn thành áp dụng cấu hình")
+end
+
+-- Thêm biến để theo dõi trạng thái Auto Attack
+local autoAttackEnabled = false
+ConfigSystem.DefaultConfig.AutoAttackEnabled = false
+
+Tabs.Main:AddToggle("AutoAttackToggle", {
+    Title = "Auto Attack Mobs",
+    Default = ConfigSystem.CurrentConfig.AutoAttackEnabled or false,
+    Callback = function(state)
+        autoAttackEnabled = state
+        ConfigSystem.CurrentConfig.AutoAttackEnabled = state
+        ConfigSystem.SaveConfig()
+        
+        if state then
+            Fluent:Notify({
+                Title = "Auto Attack",
+                Content = "Đã bật tự động tấn công mobs",
+                Duration = 3
+            })
+            
+            -- Bắt đầu vòng lặp auto attack
+            task.spawn(function()
+                while autoAttackEnabled do
+                    local targetEnemy
+                    
+                    -- Kiểm tra xem Farm Selected Mob có đang bật không
+                    if ConfigSystem.CurrentConfig.FarmSelectedMob and selectedMobName ~= "" then
+                        -- Nếu đang farm mob đã chọn, tìm mob đó
+                        targetEnemy = getNearestSelectedEnemy()
+                    else
+                        -- Nếu không, tìm bất kỳ mob nào gần nhất
+                        targetEnemy = getNearestEnemy()
+                    end
+                    
+                    if targetEnemy then
+                        local args = {
+                            [1] = {
+                                [1] = {
+                                    ["Event"] = "PunchAttack",
+                                    ["Enemy"] = targetEnemy.Name
+                                },
+                                [2] = "\4"
+                            }
+                        }
+                        remote:FireServer(unpack(args))
+                    end
+                    task.wait(attackCooldown) -- Chờ giữa các lần tấn công
+                end
+            end)
+        else
+            Fluent:Notify({
+                Title = "Auto Attack",
+                Content = "Đã tắt tự động tấn công mobs",
+                Duration = 3
+            })
+        end
+    end
+})
 
 -- Thêm hàm để đảm bảo thư mục tồn tại
 ConfigSystem.EnsureDirectory = function(path)
@@ -534,9 +654,11 @@ local attackCooldown = 0.5
 
 Tabs.Main:AddToggle("AutoAttackToggle", {
     Title = "Auto Attack Mobs",
-    Default = false,
+    Default = ConfigSystem.CurrentConfig.AutoAttackEnabled or false,
     Callback = function(state)
         autoAttackEnabled = state
+        ConfigSystem.CurrentConfig.AutoAttackEnabled = state
+        ConfigSystem.SaveConfig()
         
         if state then
             Fluent:Notify({
@@ -1638,10 +1760,25 @@ local function AutoSaveConfig()
     pcall(function()
         SaveManager:Load(configName)
     end)
+    
+    -- Áp dụng cấu hình Fluent
+    pcall(function()
+        ConfigSystem.ApplyConfig()
+    end)
 end
 
 -- Thực thi tự động lưu/tải cấu hình
 AutoSaveConfig()
+setupSaveEvents() -- Thêm dòng này
+
+-- Áp dụng cấu hình đã tải sau khi UI được tạo
+task.spawn(function()
+    task.wait(2) -- Đợi UI tải xong
+    pcall(function()
+        print("[CONFIG] Áp dụng cấu hình sau khi khởi động...")
+        ConfigSystem.ApplyConfig()
+    end)
+end)
 
 -- Thêm hỗ trợ Mobile UI
 repeat task.wait(0.25) until game:IsLoaded()
