@@ -3,6 +3,10 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 local workspace = game:GetService("Workspace")
 
+-- Thêm biến sử dụng bởi Auto Attack sớm để tránh lỗi
+local autoAttackEnabled = false
+local attackCooldown = 0.5
+
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local hrp = character:WaitForChild("HumanoidRootPart")
@@ -32,7 +36,8 @@ ConfigSystem.DefaultConfig = {
     AutoBuyEnabled = false,
     AutoScanEnabled = false,
     ScanDelay = 1,
-    SelectedRanks = {}
+    SelectedRanks = {},
+    AutoAttackEnabled = false
 }
 ConfigSystem.CurrentConfig = {}
 
@@ -125,6 +130,12 @@ end
 
 -- Thêm hàm để áp dụng cấu hình vào UI
 ConfigSystem.ApplyConfig = function()
+    -- Đảm bảo Fluent đã load xong
+    if not Fluent or not Fluent.Options then
+        print("[CONFIG] Fluent chưa sẵn sàng, không thể áp dụng cấu hình")
+        return false
+    end
+    
     print("[CONFIG] Đang áp dụng cấu hình vào UI...")
     
     -- Danh sách các toggle và dropdown cần áp dụng
@@ -160,30 +171,30 @@ ConfigSystem.ApplyConfig = function()
     
     -- Áp dụng cấu hình vào UI
     for _, setting in ipairs(configSettings) do
-        if Fluent and Fluent.Options and Fluent.Options[setting.id] then
+        if Fluent.Options[setting.id] then
             local option = Fluent.Options[setting.id]
             
             if setting.type == "toggle" and option.SetValue then
                 pcall(function()
                     option:SetValue(setting.value)
-                    print("[CONFIG] Đã áp dụng toggle", setting.id, "=", setting.value)
+                    print("[CONFIG] Đã áp dụng toggle", setting.id, "=", tostring(setting.value))
                 end)
             elseif setting.type == "dropdown" and option.SetValue then
                 pcall(function()
                     option:SetValue(setting.value)
-                    print("[CONFIG] Đã áp dụng dropdown", setting.id, "=", setting.value)
+                    print("[CONFIG] Đã áp dụng dropdown", setting.id, "=", tostring(setting.value))
                 end)
             end
         else
-            -- print("[CONFIG] Không tìm thấy tùy chọn:", setting.id)
+            --print("[CONFIG] Không tìm thấy tùy chọn:", setting.id)
         end
     end
     
     print("[CONFIG] Hoàn thành áp dụng cấu hình")
+    return true
 end
 
 -- Thêm biến để theo dõi trạng thái Auto Attack
-local autoAttackEnabled = false
 ConfigSystem.DefaultConfig.AutoAttackEnabled = false
 
 Tabs.Main:AddToggle("AutoAttackToggle", {
@@ -1771,13 +1782,33 @@ end
 AutoSaveConfig()
 setupSaveEvents() -- Thêm dòng này
 
+-- Thay đoạn áp dụng cấu hình cuối script
 -- Áp dụng cấu hình đã tải sau khi UI được tạo
 task.spawn(function()
-    task.wait(2) -- Đợi UI tải xong
-    pcall(function()
-        print("[CONFIG] Áp dụng cấu hình sau khi khởi động...")
-        ConfigSystem.ApplyConfig()
-    end)
+    local checkCount = 0
+    local maxChecks = 10
+    
+    local function checkAndApplyConfig()
+        checkCount = checkCount + 1
+        
+        if Fluent and Fluent.Options and Fluent.Options.FarmSelectedMob then
+            print("[CONFIG] UI đã sẵn sàng, áp dụng cấu hình...")
+            ConfigSystem.ApplyConfig()
+            return true
+        end
+        
+        if checkCount >= maxChecks then
+            print("[CONFIG] Không thể áp dụng cấu hình sau", maxChecks, "lần thử")
+            return false
+        end
+        
+        print("[CONFIG] UI chưa sẵn sàng, thử lại sau 1 giây...")
+        task.wait(1)
+        return checkAndApplyConfig()
+    end
+    
+    task.wait(3) -- Đợi script tải xong
+    checkAndApplyConfig()
 end)
 
 -- Thêm hỗ trợ Mobile UI
