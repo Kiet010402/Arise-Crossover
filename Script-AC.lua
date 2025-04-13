@@ -343,7 +343,7 @@ local mobsByWorld = {
     ["BCWorld"] = {"Sortudo", "Michille", "Wind"},
     ["ChainsawWorld"] = {"Heaven", "Zere", "Ika"},
     ["JojoWorld"] = {"Diablo", "Gosuke", "Golyne"},
-    ["DBWorld"] = {"Turtle", "Green", "Sky"},
+    ["DBWorld"] = {"Turtle", "Green", "Sky"}
 }
 
 local selectedWorld = "SoloWorld" -- Default world
@@ -351,7 +351,7 @@ local selectedWorld = "SoloWorld" -- Default world
 -- Dropdown để chọn World/Map
 Tabs.Main:AddDropdown("WorldDropdown", {
     Title = "Select World",
-    Values = {"SoloWorld", "NarutoWorld", "OPWorld", "BleachWorld", "BCWorld", "ChainsawWorld", "JojoWorld"},
+    Values = {"SoloWorld", "NarutoWorld", "OPWorld", "BleachWorld", "BCWorld", "ChainsawWorld", "JojoWorld", "DBWorld"},
     Multi = false,
     Default = selectedWorld,
     Callback = function(world)
