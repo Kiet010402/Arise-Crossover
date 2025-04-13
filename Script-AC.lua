@@ -429,7 +429,7 @@ local Dropdown = Tabs.Main:AddDropdown("MovementMethod", {
     end
 })
 
-Tabs.Main:AddToggle("AutoAttack", {
+Tabs.Main:AddToggle("DamageMobs", {
     Title = "Auto Attack",
     Default = ConfigSystem.CurrentConfig.DamageMobs or false,
     Callback = function(state)
