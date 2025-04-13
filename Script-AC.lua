@@ -108,6 +108,11 @@ local function isEnemyDead(enemy)
 end
 
 local function getNearestSelectedEnemy()
+    -- Nếu không tìm thấy quái vật nào trong 5 giây, làm mới danh sách
+    if not selectedEnemyFoundTime or os.time() - selectedEnemyFoundTime > 5 then
+        killedNPCs = {} -- Đặt lại danh sách quái vật đã tiêu diệt
+    end
+
     local nearestEnemy = nil
     local shortestDistance = math.huge
     local playerPosition = hrp.Position
@@ -128,6 +133,11 @@ local function getNearestSelectedEnemy()
             end
         end
     end
+
+    if nearestEnemy then
+        selectedEnemyFoundTime = os.time() -- Cập nhật thời gian tìm thấy quái vật
+    end
+    
     return nearestEnemy
 end
 
@@ -239,8 +249,18 @@ local function teleportDungeon()
 end
 
 local function teleportToSelectedEnemy()
+    local lastResetTime = os.time()
+    
     while teleportEnabled do
         local target = getNearestSelectedEnemy()
+        
+        -- Nếu không tìm thấy mục tiêu trong 3 giây, làm mới danh sách
+        if not target and os.time() - lastResetTime > 3 then
+            killedNPCs = {}
+            lastResetTime = os.time()
+            print("Đã làm mới danh sách quái vật đã tiêu diệt")
+        end
+        
         if target and target.Parent then
             anticheat()
             moveToTarget(target)
@@ -408,7 +428,7 @@ local Dropdown = Tabs.Main:AddDropdown("MovementMethod", {
         movementMethod = option
         ConfigSystem.CurrentConfig.FarmingMethod = option
         ConfigSystem.SaveConfig()
-    end
+    end 
 })
 
 Tabs.Main:AddToggle("GamepassShadowFarm", {
@@ -2136,3 +2156,6 @@ Tabs.dungeon:AddToggle("TeleportMobs", {
         end 
     end 
 })
+
+-- Thiết lập biến theo dõi thời gian
+local selectedEnemyFoundTime = nil
