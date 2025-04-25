@@ -1038,7 +1038,7 @@ Tabs.dungeon:AddToggle("TeleportToDungeon", {
 })
 
 
-local AutoDetectToggle = Tabs.dungeon:AddToggle("AutoDetectDungeon", {Title = "Auto Detect Dungeon (KEEP THIS ON)", Default = true})
+local AutoDetectToggle = Tabs.dungeon:AddToggle("AutoDetectDungeon", {Title = "Auto Detect Dungeon", Default = true})
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -1845,7 +1845,7 @@ local weaponsByShop = {
     ["WeaponShop6"] = {"OzSword2", "CrystalSword2", "ObsidianDualAxe2", "SilverSpear2", "DragonAxe2", "DualDivineAxe2"},
     ["WeaponShop7"] = {"BloodStaff2", "DualCrimsonStaff2", "DualGemStaffs2", "GreatScythe2", "TwinObsidianDualStaff2", "SlayerScythe2"},
     ["WeaponShop8"] = {"BeholderStaff2", "TwinMixedAxe2", "TwinTrollSlayer2", "RuneAxe2", "DualSilverSpear2", "DualDragonAxe2"},
-    ["WeaponShop9"] = {"DualGreatScythe2", "DualGreatSword2", "DualGreatAxe2", "DualGreatKatana2", "DualGreatSword2", "DualGreatAxe2"},
+    ["WeaponShop9"] = {"SteelSword2", "SteelSpear2", "StarSpear2", "BoneStaff2", "SunGreatAxe2", "EnergyGreatSword2"},
 }
 
 local selectedShop = "WeaponShop1" -- Shop mặc định
@@ -2013,7 +2013,7 @@ ConfigSystem.DefaultConfig.AutoSelectedEnabled = autoSelectedEnabled
 
 -- Dropdown để chọn loại vũ khí muốn nâng cấp
 Tabs.shop:AddDropdown("WeaponTypeDropdown", {
-    Title = "Select Weapon Type",
+    Title = "Select Weapon",
     Values = weaponTypes,
     Multi = false,
     Default = ConfigSystem.CurrentConfig.SelectedWeaponType or selectedWeaponType,
@@ -2202,7 +2202,7 @@ ConfigSystem.DefaultConfig.AutoSellEnabled = false
 
 -- Dropdown để chọn Rank
 Tabs.shop:AddDropdown("RankDropdown", {
-    Title = "Choose Ranks to Sell",
+    Title = "Choose Ranks",
     Values = rankValues,
     Multi = true,
     Default = ConfigSystem.CurrentConfig.SelectedRanks or {},
