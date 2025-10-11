@@ -249,9 +249,10 @@ end
 
 local function cframeToStr(cf)
     if typeof and typeof(cf) == "CFrame" then
+        local x, y, z = cf.Position.X, cf.Position.Y, cf.Position.Z
+        local r00, r01, r02, r10, r11, r12, r20, r21, r22 = cf:GetComponents()
         return string.format("CFrame.new(%f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f)", 
-            cf.X, cf.Y, cf.Z, cf.Right.X, cf.Right.Y, cf.Right.Z,
-            cf.Up.X, cf.Up.Y, cf.Up.Z, cf.LookVector.X, cf.LookVector.Y, cf.LookVector.Z)
+            x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22)
     end
     return tostring(cf)
 end
