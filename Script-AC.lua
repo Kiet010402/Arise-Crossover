@@ -285,6 +285,13 @@ local function serialize(val, indent)
                     valueStr = vecToStr(v)
                 elseif typeof and typeof(v) == "CFrame" then
                     valueStr = cframeToStr(v)
+                elseif typeof and typeof(v) == "Instance" then
+                    -- Special handling for Instance objects (like Tower references)
+                    if v.Parent and v.Name then
+                        valueStr = string.format("workspace:WaitForChild(\"Towers\"):WaitForChild(\"%s\")", v.Name)
+                    else
+                        valueStr = tostring(v)
+                    end
                 elseif type(v) == "table" then
                     valueStr = serialize(v, indent + 4)
                 elseif type(v) == "string" then
@@ -302,6 +309,13 @@ local function serialize(val, indent)
                     valueStr = vecToStr(v)
                 elseif typeof and typeof(v) == "CFrame" then
                     valueStr = cframeToStr(v)
+                elseif typeof and typeof(v) == "Instance" then
+                    -- Special handling for Instance objects (like Tower references)
+                    if v.Parent and v.Name then
+                        valueStr = string.format("workspace:WaitForChild(\"Towers\"):WaitForChild(\"%s\")", v.Name)
+                    else
+                        valueStr = tostring(v)
+                    end
                 elseif type(v) == "table" then
                     valueStr = serialize(v, indent + 4)
                 elseif type(v) == "string" then
