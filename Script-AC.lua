@@ -27,6 +27,10 @@ ConfigSystem.DefaultConfig = {
     HalloweenEventEnabled = false,
     -- Macro Settings
     SelectedMacro = "",
+    PlayMacroEnabled = false,
+    -- Sell All Settings
+    SellAllEnabled = false,
+    SellAllWave = 10,
 }
 ConfigSystem.CurrentConfig = {}
 
@@ -50,7 +54,7 @@ ConfigSystem.LoadConfig = function()
         end
         return nil
     end)
-
+    
     if success and content then
         local data = game:GetService("HttpService"):JSONDecode(content)
         ConfigSystem.CurrentConfig = data
@@ -80,7 +84,6 @@ local Window = Fluent:CreateWindow({
 })
 
 -- Hệ thống Tạo Tab
-
 -- Tạo Tab Joiner
 local JoinerTab = Window:AddTab({ Title = "Joiner", Icon = "rbxassetid://90319448802378" })
 -- Tạo Tab Macro
@@ -92,9 +95,23 @@ local SettingsTab = Window:AddTab({ Title = "Settings", Icon = "rbxassetid://903
 -- Section Event trong tab Joiner
 local EventSection = JoinerTab:AddSection("Event")
 
+-- Tab Settings
+-- Settings tab configuration in Settings tab
+local SettingsSection = SettingsTab:AddSection("Script Settings")
+-- Sell All Unit Section in Settings tab
+local SellAllSection = SettingsTab:AddSection("Sell All Unit")
+
+--Tab Joiner Save Settings
 -- Biến lưu trạng thái Halloween Event
-local halloweenEventEnabled = false
-local delayTime = 3 -- Default delay time
+local halloweenEventEnabled = ConfigSystem.CurrentConfig.HalloweenEventEnabled or false
+local delayTime = ConfigSystem.CurrentConfig.DelayTime or 3
+
+--Tab Settings Save Settings
+-- Biến lưu trạng thái Sell All
+local sellAllEnabled = ConfigSystem.CurrentConfig.SellAllEnabled or false
+local sellAllWave = ConfigSystem.CurrentConfig.SellAllWave or 10
+local waveConnection = nil
+
 
 -- Hàm thực thi Halloween Event
 local function executeHalloweenEvent()
@@ -123,12 +140,14 @@ end
 -- Input Delay Time
 EventSection:AddInput("DelayTimeInput", {
     Title = "Delay Time",
-    Default = "3",
+    Default = tostring(delayTime),
     Placeholder = "(1-60s)",
     Callback = function(val)
         local num = tonumber(val)
         if num and num >= 1 and num <= 60 then
             delayTime = num
+            ConfigSystem.CurrentConfig.DelayTime = delayTime
+            ConfigSystem.SaveConfig()
             print("Delay time set to:", delayTime, "seconds")
         else
             warn("Delay time must be between 1-60 seconds")
@@ -139,20 +158,21 @@ EventSection:AddInput("DelayTimeInput", {
 -- Toggle Join Halloween Event
 EventSection:AddToggle("HalloweenEventToggle", {
     Title = "Join Halloween Event",
-    Description = "Tự động tham gia sự kiện Halloween 2025",
-    Default = false,
+    Description = "Auto Join Halloween",
+    Default = halloweenEventEnabled,
     Callback = function(enabled)
         halloweenEventEnabled = enabled
+        ConfigSystem.CurrentConfig.HalloweenEventEnabled = halloweenEventEnabled
+        ConfigSystem.SaveConfig()
         if halloweenEventEnabled then
-            print("Halloween Event Enabled - Đã bật tham gia sự kiện Halloween")
+            print("Halloween Event Enabled - Auto Join Halloween 2025")
             executeHalloweenEvent()
         else
-            print("Halloween Event Disabled - Đã tắt tham gia sự kiện Halloween")
+            print("Halloween Event Disabled - Auto Join Halloween 2025")
         end
     end
 })
 
--- Tab Macro
 -- Macro helpers
 local MacroSystem = {}
 MacroSystem.BaseFolder = "HTHubALS_Macros"
@@ -209,7 +229,7 @@ local MacroSection = MacroTab:AddSection("Macro Recorder")
 -- Dropdown select macro
 local MacroDropdown = MacroSection:AddDropdown("MacroSelect", {
     Title = "Select Macro",
-    Description = "Chọn file macro",
+    Description = "Select macro",
     Values = listMacros(),
     Default = selectedMacro ~= "" and selectedMacro or nil,
     Callback = function(val)
@@ -232,7 +252,7 @@ MacroSection:AddInput("MacroNameInput", {
 -- Create macro button
 MacroSection:AddButton({
     Title = "Create Macro",
-    Description = "Tạo file macro .txt",
+    Description = "Create macro .txt",
     Callback = function()
         local name = pendingMacroName ~= "" and pendingMacroName or ("macro_" .. os.time() .. ".txt")
         if not string.find(name, "%.") then name = name .. ".txt" end
@@ -262,7 +282,7 @@ MacroSection:AddButton({
 -- Delete macro button
 MacroSection:AddButton({
     Title = "Delete Macro",
-    Description = "Xóa file macro đang chọn",
+    Description = "Delete selected macro",
     Callback = function()
         if not selectedMacro or selectedMacro == "" then return end
         local path = macroPath(selectedMacro)
@@ -477,7 +497,7 @@ end
 -- Toggle record macro
 MacroSection:AddToggle("RecordMacroToggle", {
     Title = "Record Macro",
-    Description = "Ghi macro và thời gian chờ",
+    Description = "",
     Default = false,
     Callback = function(enabled)
         if enabled then
@@ -669,12 +689,16 @@ end
 
 MacroSection:AddToggle("PlayMacroToggle", {
     Title = "Play Macro",
-    Description = "Bật/tắt phát macro đang chọn",
-    Default = false,
+    Description = "",
+    Default = ConfigSystem.CurrentConfig.PlayMacroEnabled or false,
     Callback = function(isOn)
+        -- Lưu trạng thái play macro
+        ConfigSystem.CurrentConfig.PlayMacroEnabled = isOn
+        ConfigSystem.SaveConfig()
+        
         if isOn then
             if not selectedMacro or selectedMacro == "" then
-                warn("Chưa chọn macro để phát")
+                warn("No macro selected")
                 return
             end
             local path = macroPath(selectedMacro)
@@ -683,7 +707,7 @@ MacroSection:AddToggle("PlayMacroToggle", {
                 return nil
             end)
             if not (ok and content) then
-                warn("Đọc file macro thất bại")
+                warn("Failed to read macro file")
                 return
             end
 
@@ -763,8 +787,88 @@ MacroSection:AddToggle("PlayMacroToggle", {
     end
 })
 
--- Settings tab configuration
-local SettingsSection = SettingsTab:AddSection("Script Settings")
+-- Hàm bắt đầu theo dõi wave
+local function startSellAllWatcher()
+    if waveConnection then
+        waveConnection:Disconnect()
+        waveConnection = nil
+    end
+    
+    if not sellAllEnabled then return end
+    
+    local wave = game:GetService("ReplicatedStorage"):WaitForChild("Wave", 5)
+    if not wave then
+        warn("Không tìm thấy Wave object")
+        return
+    end
+    
+    waveConnection = wave.Changed:Connect(function(newVal)
+        if sellAllEnabled and tonumber(newVal) == sellAllWave then
+            print("Wave", sellAllWave, "reached! Selling all units...")
+            
+            local success, err = pcall(function()
+                game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("UnitManager"):WaitForChild("SellAll"):FireServer()
+            end)
+            
+            if success then
+                print("Sell All executed successfully!")
+            else
+                warn("Sell All failed:", err)
+            end
+        end
+    end)
+end
+
+-- Hàm dừng theo dõi wave
+local function stopSellAllWatcher()
+    if waveConnection then
+        waveConnection:Disconnect()
+        waveConnection = nil
+    end
+end
+
+-- Khởi tạo Sell All watcher nếu đã được bật
+if sellAllEnabled then
+    startSellAllWatcher()
+end
+
+-- Input Wave
+SellAllSection:AddInput("SellAllWaveInput", {
+    Title = "Sell At Wave",
+    Default = tostring(sellAllWave),
+    Placeholder = "Nhập wave để sell all (1-999)",
+    Callback = function(val)
+        local num = tonumber(val)
+        if num and num >= 1 and num <= 999 then
+            sellAllWave = num
+            ConfigSystem.CurrentConfig.SellAllWave = sellAllWave
+            ConfigSystem.SaveConfig()
+            print("Sell All Wave set to:", sellAllWave)
+        else
+            warn("Wave must be between 1-999")
+        end
+    end
+})
+
+-- Toggle Sell All
+SellAllSection:AddToggle("SellAllToggle", {
+    Title = "Auto Sell All Units",
+    Description = "Tự động sell all units khi đạt wave chỉ định",
+    Default = sellAllEnabled,
+    Callback = function(enabled)
+        sellAllEnabled = enabled
+        ConfigSystem.CurrentConfig.SellAllEnabled = sellAllEnabled
+        ConfigSystem.SaveConfig()
+        
+        if sellAllEnabled then
+            print("Sell All Enabled - Tự động sell all units tại wave", sellAllWave)
+            startSellAllWatcher()
+        else
+            print("Sell All Disabled - Đã tắt tự động sell all units")
+            stopSellAllWatcher()
+        end
+    end
+})
 
 -- Integration with SaveManager
 SaveManager:SetLibrary(Fluent)
@@ -822,12 +926,12 @@ setupSaveEvents()
 -- Tạo logo để mở lại UI khi đã minimize
 task.spawn(function()
     local success, errorMsg = pcall(function()
-        if not getgenv().LoadedMobileUI == true then
+        if not getgenv().LoadedMobileUI == true then 
             getgenv().LoadedMobileUI = true
             local OpenUI = Instance.new("ScreenGui")
             local ImageButton = Instance.new("ImageButton")
             local UICorner = Instance.new("UICorner")
-
+            
             -- Kiểm tra môi trường
             if syn and syn.protect_gui then
                 syn.protect_gui(OpenUI)
@@ -837,10 +941,10 @@ task.spawn(function()
             else
                 OpenUI.Parent = game:GetService("CoreGui")
             end
-
+            
             OpenUI.Name = "OpenUI"
             OpenUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-
+            
             ImageButton.Parent = OpenUI
             ImageButton.BackgroundColor3 = Color3.fromRGB(105, 105, 105)
             ImageButton.BackgroundTransparency = 0.8
@@ -849,17 +953,17 @@ task.spawn(function()
             ImageButton.Image = "rbxassetid://90319448802378" -- Logo HT Hub
             ImageButton.Draggable = true
             ImageButton.Transparency = 0.2
-
+            
             UICorner.CornerRadius = UDim.new(0, 200)
             UICorner.Parent = ImageButton
-
+            
             -- Khi click vào logo sẽ mở lại UI
             ImageButton.MouseButton1Click:Connect(function()
                 game:GetService("VirtualInputManager"):SendKeyEvent(true, Enum.KeyCode.LeftControl, false, game)
             end)
         end
     end)
-
+    
     if not success then
         warn("Lỗi khi tạo nút Logo UI: " .. tostring(errorMsg))
     end
