@@ -34,6 +34,7 @@ ConfigSystem.DefaultConfig = {
     -- In Game Settings
     AutoRetryEnabled = false,
     AutoNextEnabled = false,
+    AutoLeaveEnabled = false,
 }
 ConfigSystem.CurrentConfig = {}
 
@@ -137,6 +138,7 @@ local waveConnection = nil
 -- Biến lưu trạng thái Auto Play
 local autoRetryEnabled = ConfigSystem.CurrentConfig.AutoRetryEnabled or false
 local autoNextEnabled = ConfigSystem.CurrentConfig.AutoNextEnabled or false
+local autoLeaveEnabled = ConfigSystem.CurrentConfig.AutoLeaveEnabled or false
 local endGameUIConnection = nil
 
 
@@ -282,6 +284,47 @@ local function findAndClickNext()
     return result
 end
 
+-- Hàm click Leave button
+local function findAndClickLeave()
+    local Players = game:GetService("Players")
+    local VirtualInputManager = game:GetService("VirtualInputManager")
+    
+    local success, result = pcall(function()
+        local player = Players.LocalPlayer
+        local leaveButton = player.PlayerGui:WaitForChild("EndGameUI"):WaitForChild("BG"):WaitForChild("Buttons"):WaitForChild("Leave")
+        
+        if leaveButton and leaveButton:IsA("GuiButton") then
+            local absolutePosition = leaveButton.AbsolutePosition
+            local absoluteSize = leaveButton.AbsoluteSize
+            
+            local centerX = absolutePosition.X + (absoluteSize.X / 2)
+            local centerY = absolutePosition.Y + (absoluteSize.Y / 2) + 55
+            
+            -- Sử dụng task.spawn để không block UI
+            task.spawn(function()
+                VirtualInputManager:SendMouseMoveEvent(centerX, centerY, game)
+                task.wait(0.1)
+                VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, true, game, 0)
+                task.wait(0.05)
+                VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, false, game, 0)
+            end)
+            
+            print("Đã click vào nút Leave tại vị trí:", centerX, centerY)
+            return true
+        else
+            warn("Không tìm thấy nút Leave!")
+            return false
+        end
+    end)
+    
+    if not success then
+        warn("Lỗi khi click Leave:", result)
+        return false
+    end
+    
+    return result
+end
+
 -- Hàm bắt đầu theo dõi EndGameUI
 local function startEndGameUIWatcher()
     if endGameUIConnection then
@@ -289,7 +332,7 @@ local function startEndGameUIWatcher()
         endGameUIConnection = nil
     end
     
-    if not (autoRetryEnabled or autoNextEnabled) then return end
+    if not (autoRetryEnabled or autoNextEnabled or autoLeaveEnabled) then return end
     
     local player = game:GetService("Players").LocalPlayer
     local playerGui = player:WaitForChild("PlayerGui", 5)
@@ -316,6 +359,12 @@ local function startEndGameUIWatcher()
                     print("Auto Next: Clicking Next button...")
                     findAndClickNext()
                 end
+                
+                if autoLeaveEnabled then
+                    task.wait(5) -- Đợi 5s như yêu cầu
+                    print("Auto Leave: Clicking Leave button...")
+                    findAndClickLeave()
+                end
             end)
         end
     end)
@@ -332,7 +381,7 @@ end
 -- Toggle Auto Retry
 AutoPlaySection:AddToggle("AutoRetryToggle", {
     Title = "Auto Retry",
-    Description = "Tự động click Retry khi game kết thúc",
+    Description = "",
     Default = autoRetryEnabled,
     Callback = function(enabled)
         autoRetryEnabled = enabled
@@ -352,7 +401,7 @@ AutoPlaySection:AddToggle("AutoRetryToggle", {
 -- Toggle Auto Next
 AutoPlaySection:AddToggle("AutoNextToggle", {
     Title = "Auto Next",
-    Description = "Tự động click Next khi game kết thúc",
+    Description = "",
     Default = autoNextEnabled,
     Callback = function(enabled)
         autoNextEnabled = enabled
@@ -369,8 +418,28 @@ AutoPlaySection:AddToggle("AutoNextToggle", {
     end
 })
 
+-- Toggle Auto Leave
+AutoPlaySection:AddToggle("AutoLeaveToggle", {
+    Title = "Auto Leave",
+    Description = "",
+    Default = autoLeaveEnabled,
+    Callback = function(enabled)
+        autoLeaveEnabled = enabled
+        ConfigSystem.CurrentConfig.AutoLeaveEnabled = autoLeaveEnabled
+        ConfigSystem.SaveConfig()
+        
+        if autoLeaveEnabled then
+            print("Auto Leave Enabled - Tự động click Leave")
+        else
+            print("Auto Leave Disabled - Đã tắt tự động click Leave")
+        end
+        
+        startEndGameUIWatcher()
+    end
+})
+
 -- Khởi tạo EndGameUI watcher nếu đã được bật
-if autoRetryEnabled or autoNextEnabled then
+if autoRetryEnabled or autoNextEnabled or autoLeaveEnabled then
     startEndGameUIWatcher()
 end
 
