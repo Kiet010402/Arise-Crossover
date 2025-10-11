@@ -345,32 +345,6 @@ local function startEndGameUIWatcher()
         if child.Name == "EndGameUI" then
             print("EndGameUI detected! Waiting 2 seconds...")
             
-            -- Tự động tắt Record và lưu file
-            if Recorder.isRecording then
-                print("Auto stopping Record due to EndGameUI...")
-                Recorder.isRecording = false
-                if Recorder.moneyConn then
-                    Recorder.moneyConn:Disconnect()
-                    Recorder.moneyConn = nil
-                end
-                local path = macroPath(selectedMacro)
-                local ok, errMsg = pcall(function()
-                    writefile(path, Recorder.buffer or "-- empty macro\n")
-                end)
-                if ok then
-                    print("Recording auto-saved:", selectedMacro)
-                    -- Cập nhật UI toggle
-                    pcall(function()
-                        local recordToggle = MacroSection:FindFirstChild("RecordMacroToggle")
-                        if recordToggle and recordToggle.SetValue then
-                            recordToggle:SetValue(false)
-                        end
-                    end)
-                else
-                    warn("Auto-save macro failed:", errMsg)
-                end
-            end
-            
             -- Sử dụng task.spawn để không block UI
             task.spawn(function()
                 task.wait(2)
