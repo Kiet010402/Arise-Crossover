@@ -2,9 +2,9 @@
 local success, err = pcall(function()
     Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
     SaveManager = loadstring(game:HttpGet(
-    "https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
+        "https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
     InterfaceManager = loadstring(game:HttpGet(
-    "https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
+        "https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
 end)
 
 if not success then
@@ -22,6 +22,9 @@ end
 local ConfigSystem = {}
 ConfigSystem.FileName = "HTHubALS_" .. game:GetService("Players").LocalPlayer.Name .. ".json"
 ConfigSystem.DefaultConfig = {
+    -- Event Settings
+    DelayTime = 3,
+    HalloweenEventEnabled = false,
     -- Macro Settings
     SelectedMacro = "",
 }
@@ -62,8 +65,6 @@ end
 -- Tải cấu hình khi khởi động
 ConfigSystem.LoadConfig()
 
--- Biến lưu trạng thái của tab Main (auto features removed)
-
 -- Lấy tên người chơi
 local playerName = game:GetService("Players").LocalPlayer.Name
 
@@ -88,8 +89,68 @@ local MacroTab = Window:AddTab({ Title = "Macro", Icon = "rbxassetid://903194488
 local SettingsTab = Window:AddTab({ Title = "Settings", Icon = "rbxassetid://90319448802378" })
 
 -- Tab Joiner
--- Section Auto Play trong tab Joiner
-local AutoPlaySection = JoinerTab:AddSection("Auto Play")
+-- Section Event trong tab Joiner
+local EventSection = JoinerTab:AddSection("Event")
+
+-- Biến lưu trạng thái Halloween Event
+local halloweenEventEnabled = false
+local delayTime = 3 -- Default delay time
+
+-- Hàm thực thi Halloween Event
+local function executeHalloweenEvent()
+    if not halloweenEventEnabled then return end
+
+    local success, err = pcall(function()
+        -- Bước 1: Enter Halloween Event
+        print("Bước 1: Entering Halloween Event...")
+        game:GetService("ReplicatedStorage").Events.Hallowen2025.Enter:FireServer()
+
+        -- Bước 2: Đợi delay time rồi Start
+        task.wait(delayTime)
+
+        if halloweenEventEnabled then -- Kiểm tra lại sau khi đợi
+            print("Bước 2: Starting Halloween Event...")
+            game:GetService("ReplicatedStorage").Events.Hallowen2025.Start:FireServer()
+            print("Halloween Event executed successfully!")
+        end
+    end)
+
+    if not success then
+        warn("Lỗi Halloween Event:", err)
+    end
+end
+
+-- Input Delay Time
+EventSection:AddInput("DelayTimeInput", {
+    Title = "Delay Time",
+    Default = "3",
+    Placeholder = "(1-60s)",
+    Callback = function(val)
+        local num = tonumber(val)
+        if num and num >= 1 and num <= 60 then
+            delayTime = num
+            print("Delay time set to:", delayTime, "seconds")
+        else
+            warn("Delay time must be between 1-60 seconds")
+        end
+    end
+})
+
+-- Toggle Join Halloween Event
+EventSection:AddToggle("HalloweenEventToggle", {
+    Title = "Join Halloween Event",
+    Description = "Tự động tham gia sự kiện Halloween 2025",
+    Default = false,
+    Callback = function(enabled)
+        halloweenEventEnabled = enabled
+        if halloweenEventEnabled then
+            print("Halloween Event Enabled - Đã bật tham gia sự kiện Halloween")
+            executeHalloweenEvent()
+        else
+            print("Halloween Event Disabled - Đã tắt tham gia sự kiện Halloween")
+        end
+    end
+})
 
 -- Tab Macro
 -- Macro helpers
@@ -366,10 +427,10 @@ local function recordNow(remoteName, args, noteMoney)
     -- Sử dụng FireServer cho PlaceTower và PlayerReady, InvokeServer cho Upgrade
     if remoteName == "PlaceTower" or remoteName == "PlayerReady" then
         appendLine("game:GetService(\"ReplicatedStorage\"):WaitForChild(\"Remotes\"):WaitForChild(\"" ..
-        remoteName .. "\"):FireServer(unpack(args))")
+            remoteName .. "\"):FireServer(unpack(args))")
     else
         appendLine("game:GetService(\"ReplicatedStorage\"):WaitForChild(\"Remotes\"):WaitForChild(\"" ..
-        remoteName .. "\"):InvokeServer(unpack(args))")
+            remoteName .. "\"):InvokeServer(unpack(args))")
     end
 end
 
@@ -638,9 +699,29 @@ MacroSection:AddToggle("PlayMacroToggle", {
 
             task.spawn(function()
                 while _G.__HT_MACRO_PLAYING do
-                    -- Chạy macro ngay lập tức
+                    -- Gửi PlayerReady và đợi 4 giây
+                    updateMacroStatus("Gửi PlayerReady...")
+                    print("Gửi PlayerReady...")
+
+                    local success, err = pcall(function()
+                        game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("PlayerReady")
+                            :FireServer()
+                    end)
+                    if not success then
+                        warn("Could not send PlayerReady:", err)
+                        updateMacroStatus("Lỗi: Không thể gửi PlayerReady")
+                        _G.__HT_MACRO_PLAYING = false
+                        macroPlaying = false
+                        return
+                    end
+
+                    updateMacroStatus("Đợi 4 giây...")
+                    print("PlayerReady sent! Đợi 4 giây...")
+                    task.wait(4)
+
+                    -- Chạy macro sau khi đợi
                     updateMacroStatus("Đang chạy macro...")
-                    print("Đang chạy macro...")
+                    print("Bắt đầu chạy macro...")
 
                     executeMacro(commands) -- Gọi hàm thực thi mới
 
