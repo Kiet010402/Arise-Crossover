@@ -30,7 +30,10 @@ ConfigSystem.DefaultConfig = {
     PlayMacroEnabled = false,
     -- Sell All Settings
     SellAllEnabled = false,
-    SellAllWave = 10,
+    SellAllWave = 0,
+    -- In Game Settings
+    AutoRetryEnabled = false,
+    AutoNextEnabled = false,
 }
 ConfigSystem.CurrentConfig = {}
 
@@ -88,6 +91,8 @@ local Window = Fluent:CreateWindow({
 local JoinerTab = Window:AddTab({ Title = "Joiner", Icon = "rbxassetid://90319448802378" })
 -- Tạo Tab Macro
 local MacroTab = Window:AddTab({ Title = "Macro", Icon = "rbxassetid://90319448802378" })
+-- Tạo Tab In Game
+local InGameTab = Window:AddTab({ Title = "In Game", Icon = "rbxassetid://90319448802378" })
 -- Tạo Tab Settings
 local SettingsTab = Window:AddTab({ Title = "Settings", Icon = "rbxassetid://90319448802378" })
 
@@ -109,8 +114,14 @@ local delayTime = ConfigSystem.CurrentConfig.DelayTime or 3
 --Tab Settings Save Settings
 -- Biến lưu trạng thái Sell All
 local sellAllEnabled = ConfigSystem.CurrentConfig.SellAllEnabled or false
-local sellAllWave = ConfigSystem.CurrentConfig.SellAllWave or 10
+local sellAllWave = ConfigSystem.CurrentConfig.SellAllWave or 0
 local waveConnection = nil
+
+--Tab In Game Save Settings
+-- Biến lưu trạng thái Auto Play
+local autoRetryEnabled = ConfigSystem.CurrentConfig.AutoRetryEnabled or false
+local autoNextEnabled = ConfigSystem.CurrentConfig.AutoNextEnabled or false
+local endGameUIConnection = nil
 
 
 -- Hàm thực thi Halloween Event
@@ -172,6 +183,184 @@ EventSection:AddToggle("HalloweenEventToggle", {
         end
     end
 })
+
+-- Tab In Game
+-- Section Auto Play trong tab In Game
+local AutoPlaySection = InGameTab:AddSection("Auto Play")
+
+-- Hàm click Retry button
+local function findAndClickRetry()
+    local Players = game:GetService("Players")
+    local VirtualInputManager = game:GetService("VirtualInputManager")
+    
+    local success, result = pcall(function()
+        local player = Players.LocalPlayer
+        local retryButton = player.PlayerGui:WaitForChild("EndGameUI"):WaitForChild("BG"):WaitForChild("Buttons"):WaitForChild("Retry")
+        
+        if retryButton and retryButton:IsA("GuiButton") then
+            local absolutePosition = retryButton.AbsolutePosition
+            local absoluteSize = retryButton.AbsoluteSize
+            
+            local centerX = absolutePosition.X + (absoluteSize.X / 2)
+            local centerY = absolutePosition.Y + (absoluteSize.Y / 2) + 55
+            
+            -- Sử dụng task.spawn để không block UI
+            task.spawn(function()
+                VirtualInputManager:SendMouseMoveEvent(centerX, centerY, game)
+                task.wait(0.1)
+                VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, true, game, 0)
+                task.wait(0.05)
+                VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, false, game, 0)
+            end)
+            
+            print("Đã click vào nút Retry tại vị trí:", centerX, centerY)
+            return true
+        else
+            warn("Không tìm thấy nút Retry!")
+            return false
+        end
+    end)
+    
+    if not success then
+        warn("Lỗi khi click Retry:", result)
+        return false
+    end
+    
+    return result
+end
+
+-- Hàm click Next button
+local function findAndClickNext()
+    local Players = game:GetService("Players")
+    local VirtualInputManager = game:GetService("VirtualInputManager")
+    
+    local success, result = pcall(function()
+        local player = Players.LocalPlayer
+        local nextButton = player.PlayerGui:WaitForChild("EndGameUI"):WaitForChild("BG"):WaitForChild("Buttons"):WaitForChild("Next")
+        
+        if nextButton and nextButton:IsA("GuiButton") then
+            local absolutePosition = nextButton.AbsolutePosition
+            local absoluteSize = nextButton.AbsoluteSize
+            
+            local centerX = absolutePosition.X + (absoluteSize.X / 2)
+            local centerY = absolutePosition.Y + (absoluteSize.Y / 2) + 55
+            
+            -- Sử dụng task.spawn để không block UI
+            task.spawn(function()
+                VirtualInputManager:SendMouseMoveEvent(centerX, centerY, game)
+                task.wait(0.1)
+                VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, true, game, 0)
+                task.wait(0.05)
+                VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, false, game, 0)
+            end)
+            
+            print("Đã click vào nút Next tại vị trí:", centerX, centerY)
+            return true
+        else
+            warn("Không tìm thấy nút Next!")
+            return false
+        end
+    end)
+    
+    if not success then
+        warn("Lỗi khi click Next:", result)
+        return false
+    end
+    
+    return result
+end
+
+-- Hàm bắt đầu theo dõi EndGameUI
+local function startEndGameUIWatcher()
+    if endGameUIConnection then
+        endGameUIConnection:Disconnect()
+        endGameUIConnection = nil
+    end
+    
+    if not (autoRetryEnabled or autoNextEnabled) then return end
+    
+    local player = game:GetService("Players").LocalPlayer
+    local playerGui = player:WaitForChild("PlayerGui", 5)
+    if not playerGui then
+        warn("Không tìm thấy PlayerGui")
+        return
+    end
+    
+    endGameUIConnection = playerGui.ChildAdded:Connect(function(child)
+        if child.Name == "EndGameUI" then
+            print("EndGameUI detected! Waiting 2 seconds...")
+            
+            -- Sử dụng task.spawn để không block UI
+            task.spawn(function()
+                task.wait(2)
+                
+                if autoRetryEnabled then
+                    print("Auto Retry: Clicking Retry button...")
+                    findAndClickRetry()
+                end
+                
+                if autoNextEnabled then
+                    task.wait(3) -- Đợi thêm 3s như trong code gốc
+                    print("Auto Next: Clicking Next button...")
+                    findAndClickNext()
+                end
+            end)
+        end
+    end)
+end
+
+-- Hàm dừng theo dõi EndGameUI
+local function stopEndGameUIWatcher()
+    if endGameUIConnection then
+        endGameUIConnection:Disconnect()
+        endGameUIConnection = nil
+    end
+end
+
+-- Toggle Auto Retry
+AutoPlaySection:AddToggle("AutoRetryToggle", {
+    Title = "Auto Retry",
+    Description = "Tự động click Retry khi game kết thúc",
+    Default = autoRetryEnabled,
+    Callback = function(enabled)
+        autoRetryEnabled = enabled
+        ConfigSystem.CurrentConfig.AutoRetryEnabled = autoRetryEnabled
+        ConfigSystem.SaveConfig()
+        
+        if autoRetryEnabled then
+            print("Auto Retry Enabled - Tự động click Retry")
+        else
+            print("Auto Retry Disabled - Đã tắt tự động click Retry")
+        end
+        
+        startEndGameUIWatcher()
+    end
+})
+
+-- Toggle Auto Next
+AutoPlaySection:AddToggle("AutoNextToggle", {
+    Title = "Auto Next",
+    Description = "Tự động click Next khi game kết thúc",
+    Default = autoNextEnabled,
+    Callback = function(enabled)
+        autoNextEnabled = enabled
+        ConfigSystem.CurrentConfig.AutoNextEnabled = autoNextEnabled
+        ConfigSystem.SaveConfig()
+        
+        if autoNextEnabled then
+            print("Auto Next Enabled - Tự động click Next")
+        else
+            print("Auto Next Disabled - Đã tắt tự động click Next")
+        end
+        
+        startEndGameUIWatcher()
+    end
+})
+
+-- Khởi tạo EndGameUI watcher nếu đã được bật
+if autoRetryEnabled or autoNextEnabled then
+    startEndGameUIWatcher()
+end
 
 -- Macro helpers
 local MacroSystem = {}
@@ -905,7 +1094,7 @@ AutoSaveConfig()
 
 -- Thêm event listener để lưu ngay khi thay đổi giá trị
 local function setupSaveEvents()
-    for _, tab in pairs({ JoinerTab, MacroTab, SettingsTab }) do
+    for _, tab in pairs({ JoinerTab, MacroTab, InGameTab, SettingsTab }) do
         if tab and tab._components then
             for _, element in pairs(tab._components) do
                 if element and element.OnChanged then
