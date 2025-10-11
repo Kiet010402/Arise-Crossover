@@ -413,55 +413,42 @@ MacroSection:AddToggle("RecordMacroToggle", {
             Recorder.hasStarted = false
             Recorder.pendingAction = nil
             Recorder.buffer = "-- Macro recorded by HT Hub\n"
-            print("Recording armed. Waiting for PlayerReady...")
+            print("Recording started ->", selectedMacro)
 
-            -- Wait for PlayerReady before actually recording
-            task.spawn(function()
-                -- Send PlayerReady first
-                local success, err = pcall(function()
-                    game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("PlayerReady"):FireServer()
-                end)
-                if not success then
-                    warn("Could not send PlayerReady:", err)
+            -- Start recording immediately
+            Recorder.hasStarted = true
+            Recorder.stt = 0
+            updateMacroStatus("Recording...")
+            print("Recording started ->", selectedMacro)
+
+            -- money watcher
+            pcall(function()
+                local player = game:GetService("Players").LocalPlayer
+                local cash = player:WaitForChild("Cash", 5)
+                if not cash then
+                    warn("Could not find Cash value")
                     return
                 end
-
-                print("PlayerReady sent! Recording has begun ->", selectedMacro)
                 
-                -- Start counter
-                Recorder.hasStarted = true
-                Recorder.stt = 0
-                updateMacroStatus("Recording...")
-
-                -- money watcher
-                pcall(function()
-                    local player = game:GetService("Players").LocalPlayer
-                    local cash = player:WaitForChild("Cash", 5)
-                    if not cash then
-                        warn("Could not find Cash value")
-                        return
-                    end
-                    
-                    Recorder.lastMoney = tonumber(cash.Value)
-                    if Recorder.moneyConn then Recorder.moneyConn:Disconnect() Recorder.moneyConn = nil end
-                    Recorder.moneyConn = cash.Changed:Connect(function(newVal)
-                        local current = tonumber(newVal)
-                        if Recorder.isRecording and Recorder.hasStarted and type(current) == "number" and type(Recorder.lastMoney) == "number" then
-                            if current < Recorder.lastMoney then
-                                local now = tick()
-                                if now - Recorder.lastMoneyRecordTime > 0.1 then
-                                    Recorder.lastMoneyRecordTime = now
-                                    local delta = Recorder.lastMoney - current
-                                    local action = Recorder.pendingAction
-                                    Recorder.pendingAction = nil
-                                    if action then
-                                        recordNow(action.remote, action.args, delta)
-                                    end
+                Recorder.lastMoney = tonumber(cash.Value)
+                if Recorder.moneyConn then Recorder.moneyConn:Disconnect() Recorder.moneyConn = nil end
+                Recorder.moneyConn = cash.Changed:Connect(function(newVal)
+                    local current = tonumber(newVal)
+                    if Recorder.isRecording and Recorder.hasStarted and type(current) == "number" and type(Recorder.lastMoney) == "number" then
+                        if current < Recorder.lastMoney then
+                            local now = tick()
+                            if now - Recorder.lastMoneyRecordTime > 0.1 then
+                                Recorder.lastMoneyRecordTime = now
+                                local delta = Recorder.lastMoney - current
+                                local action = Recorder.pendingAction
+                                Recorder.pendingAction = nil
+                                if action then
+                                    recordNow(action.remote, action.args, delta)
                                 end
                             end
-                            Recorder.lastMoney = current
                         end
-                    end)
+                        Recorder.lastMoney = current
+                    end
                 end)
             end)
         else
@@ -627,23 +614,10 @@ MacroSection:AddToggle("PlayMacroToggle", {
             
             task.spawn(function()
                 while _G.__HT_MACRO_PLAYING do
-                    -- Đợi game bắt đầu trước khi chơi
-                    updateMacroStatus("Chờ game bắt đầu...")
-                    print("Macro đã sẵn sàng. Đang chờ game bắt đầu...")
+                    -- Chạy macro ngay lập tức
+                    updateMacroStatus("Đang chạy macro...")
+                    print("Đang chạy macro...")
                     
-                    -- Send PlayerReady first
-                    local success, err = pcall(function()
-                        game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("PlayerReady"):FireServer()
-                    end)
-                    if not success then
-                        warn("Could not send PlayerReady:", err)
-                        updateMacroStatus("Lỗi: Không thể gửi PlayerReady")
-                        _G.__HT_MACRO_PLAYING = false
-                        macroPlaying = false
-                        return
-                    end
-
-                    print("PlayerReady sent! Đang chạy macro...")
                     executeMacro(commands) -- Gọi hàm thực thi mới
                     
                     if not _G.__HT_MACRO_PLAYING then break end
