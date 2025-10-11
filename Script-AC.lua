@@ -57,11 +57,23 @@ ConfigSystem.LoadConfig = function()
         end
         return nil
     end)
-    
+
     if success and content then
-        local data = game:GetService("HttpService"):JSONDecode(content)
-        ConfigSystem.CurrentConfig = data
-        return true
+        -- Thử parse JSON với error handling
+        local parseSuccess, data = pcall(function()
+            return game:GetService("HttpService"):JSONDecode(content)
+        end)
+        
+        if parseSuccess and data then
+            ConfigSystem.CurrentConfig = data
+            print("Config loaded successfully!")
+            return true
+        else
+            warn("Config file corrupted, using default config. Error:", data)
+            ConfigSystem.CurrentConfig = table.clone(ConfigSystem.DefaultConfig)
+            ConfigSystem.SaveConfig()
+            return false
+        end
     else
         ConfigSystem.CurrentConfig = table.clone(ConfigSystem.DefaultConfig)
         ConfigSystem.SaveConfig()
@@ -99,6 +111,10 @@ local SettingsTab = Window:AddTab({ Title = "Settings", Icon = "rbxassetid://903
 -- Tab Joiner
 -- Section Event trong tab Joiner
 local EventSection = JoinerTab:AddSection("Event")
+
+-- Tab In Game
+-- Section Auto Play trong tab In Game
+local AutoPlaySection = InGameTab:AddSection("Auto Play")
 
 -- Tab Settings
 -- Settings tab configuration in Settings tab
@@ -183,10 +199,6 @@ EventSection:AddToggle("HalloweenEventToggle", {
         end
     end
 })
-
--- Tab In Game
--- Section Auto Play trong tab In Game
-local AutoPlaySection = InGameTab:AddSection("Auto Play")
 
 -- Hàm click Retry button
 local function findAndClickRetry()
