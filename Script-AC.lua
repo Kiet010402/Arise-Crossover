@@ -1,8 +1,10 @@
 -- Load UI Library với error handling
 local success, err = pcall(function()
     Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
-    SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
-    InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
+    SaveManager = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
+    InterfaceManager = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
 end)
 
 if not success then
@@ -45,7 +47,7 @@ ConfigSystem.LoadConfig = function()
         end
         return nil
     end)
-    
+
     if success and content then
         local data = game:GetService("HttpService"):JSONDecode(content)
         ConfigSystem.CurrentConfig = data
@@ -224,9 +226,9 @@ MacroSection:AddButton({
 -- Recorder state
 local Recorder = {
     isRecording = false,
-    stt = 0, -- Sequence number
+    stt = 0,                 -- Sequence number
     hasStarted = false,
-    pendingAction = nil, -- Store only the latest action
+    pendingAction = nil,     -- Store only the latest action
     lastMoney = nil,
     lastMoneyRecordTime = 0, -- Debounce timer
     moneyConn = nil,
@@ -251,7 +253,7 @@ local function cframeToStr(cf)
     if typeof and typeof(cf) == "CFrame" then
         local x, y, z = cf.Position.X, cf.Position.Y, cf.Position.Z
         local r00, r01, r02, r10, r11, r12, r20, r21, r22 = cf:GetComponents()
-        return string.format("CFrame.new(%f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f)", 
+        return string.format("CFrame.new(%f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f)",
             x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22)
     end
     return tostring(cf)
@@ -276,7 +278,7 @@ local function serialize(val, indent)
     local pad = string.rep(" ", indent)
     if type(val) == "table" then
         local arr, n = isArray(val)
-        local parts = {"{"}
+        local parts = { "{" }
         if arr then
             for i = 1, n do
                 local v = val[i]
@@ -341,11 +343,12 @@ local function recordNow(remoteName, args, noteMoney)
     Recorder.stt = Recorder.stt + 1
 
     -- Cập nhật trạng thái (STT / Type / Money)
-    local statusContent = string.format("-STT: %d\n-Type: %s\n-Money: %d", Recorder.stt, tostring(remoteName), tonumber(noteMoney) or 0)
+    local statusContent = string.format("-STT: %d\n-Type: %s\n-Money: %d", Recorder.stt, tostring(remoteName),
+        tonumber(noteMoney) or 0)
     updateMacroStatus(statusContent)
 
     appendLine(string.format("--STT: %d", Recorder.stt))
-    
+
     if noteMoney and noteMoney > 0 then
         appendLine(string.format("--note money: %d", noteMoney))
     end
@@ -359,12 +362,14 @@ local function recordNow(remoteName, args, noteMoney)
         appendLine("-- serialize error: " .. tostring(argsStr))
         appendLine("local args = {}")
     end
-    
+
     -- Sử dụng FireServer cho PlaceTower và PlayerReady, InvokeServer cho Upgrade
     if remoteName == "PlaceTower" or remoteName == "PlayerReady" then
-        appendLine("game:GetService(\"ReplicatedStorage\"):WaitForChild(\"Remotes\"):WaitForChild(\"" .. remoteName .. "\"):FireServer(unpack(args))")
+        appendLine("game:GetService(\"ReplicatedStorage\"):WaitForChild(\"Remotes\"):WaitForChild(\"" ..
+        remoteName .. "\"):FireServer(unpack(args))")
     else
-        appendLine("game:GetService(\"ReplicatedStorage\"):WaitForChild(\"Remotes\"):WaitForChild(\"" .. remoteName .. "\"):InvokeServer(unpack(args))")
+        appendLine("game:GetService(\"ReplicatedStorage\"):WaitForChild(\"Remotes\"):WaitForChild(\"" ..
+        remoteName .. "\"):InvokeServer(unpack(args))")
     end
 end
 
@@ -378,7 +383,7 @@ local function installHookOnce()
         oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
             local method = getnamecallmethod and getnamecallmethod() or ""
             if Recorder.isRecording and (tostring(method) == "FireServer" or tostring(method) == "InvokeServer") then
-                local args = {...}
+                local args = { ... }
                 -- Only record whitelisted endpoints
                 local remoteName = tostring(self and self.Name or "")
                 local allowed = {
@@ -422,7 +427,7 @@ MacroSection:AddToggle("RecordMacroToggle", {
                 ConfigSystem.CurrentConfig.SelectedMacro = selectedMacro
                 ConfigSystem.SaveConfig()
             end
-            
+
             Recorder.isRecording = true
             Recorder.hasStarted = false
             Recorder.pendingAction = nil
@@ -443,9 +448,12 @@ MacroSection:AddToggle("RecordMacroToggle", {
                     warn("Could not find Cash value")
                     return
                 end
-                
+
                 Recorder.lastMoney = tonumber(cash.Value)
-                if Recorder.moneyConn then Recorder.moneyConn:Disconnect() Recorder.moneyConn = nil end
+                if Recorder.moneyConn then
+                    Recorder.moneyConn:Disconnect()
+                    Recorder.moneyConn = nil
+                end
                 Recorder.moneyConn = cash.Changed:Connect(function(newVal)
                     local current = tonumber(newVal)
                     if Recorder.isRecording and Recorder.hasStarted and type(current) == "number" and type(Recorder.lastMoney) == "number" then
@@ -503,7 +511,7 @@ local function parseMacro(content)
         if #blocks > 0 then
             blocks[#blocks].text = content:sub(lastPos, pos - 1)
         end
-        table.insert(blocks, {stt = tonumber(stt)})
+        table.insert(blocks, { stt = tonumber(stt) })
         lastPos = pos
     end
     if #blocks > 0 then
@@ -514,7 +522,7 @@ local function parseMacro(content)
         if block.text then
             local moneyMatch = block.text:match("--note money:%s*(%d+)")
             local money = moneyMatch and tonumber(moneyMatch) or 0
-            
+
             local code = ""
             for line in block.text:gmatch("[^\r\n]+") do
                 -- Chỉ bao gồm các dòng code có thể thực thi, loại bỏ các comment và task.wait
@@ -532,7 +540,7 @@ local function parseMacro(content)
             end
         end
     end
-    
+
     return commands
 end
 
@@ -562,24 +570,26 @@ local function executeMacro(commands)
             if callMatch then
                 nextType = callMatch
             end
-            updateMacroStatus(string.format("-STT: %d/%d\n-Next Type: %s\n-Next Money: %d", i, total, nextType, nextCommand.money))
+            updateMacroStatus(string.format("-STT: %d/%d\n-Next Type: %s\n-Next Money: %d", i, total, nextType,
+                nextCommand.money))
         end
 
         -- Đợi đủ tiền cho các lệnh có yêu cầu tiền
         if command.money > 0 then
             -- Cập nhật print để hiển thị cả tiền hiện có
             local currentMoney = cash.Value
-            print(string.format("Đang đợi đủ tiền cho STT %d: Cần %d, Hiện có %.0f", command.stt, command.money, currentMoney))
-            
+            print(string.format("Đang đợi đủ tiền cho STT %d: Cần %d, Hiện có %.0f", command.stt, command.money,
+                currentMoney))
+
             while _G.__HT_MACRO_PLAYING and cash.Value < command.money do
                 task.wait(0.2)
             end
         end
-        
+
         if not _G.__HT_MACRO_PLAYING then break end
 
         print(string.format("Thực thi STT %d (Yêu cầu tiền: %d)", command.stt, command.money))
-        
+
         local loadOk, fnOrErr = pcall(function() return loadstring(command.code) end)
         if loadOk and type(fnOrErr) == "function" then
             local runOk, runErr = pcall(fnOrErr)
@@ -589,7 +599,7 @@ local function executeMacro(commands)
         else
             warn(string.format("Lỗi khi tải code cho STT %d: %s", command.stt, tostring(fnOrErr)))
         end
-        
+
         task.wait(0.1) -- Thêm một khoảng chờ nhỏ giữa các lệnh để tránh quá tải
     end
     -- Hoàn tất macro
@@ -625,15 +635,15 @@ MacroSection:AddToggle("PlayMacroToggle", {
 
             _G.__HT_MACRO_PLAYING = true
             macroPlaying = true
-            
+
             task.spawn(function()
                 while _G.__HT_MACRO_PLAYING do
                     -- Chạy macro ngay lập tức
                     updateMacroStatus("Đang chạy macro...")
                     print("Đang chạy macro...")
-                    
+
                     executeMacro(commands) -- Gọi hàm thực thi mới
-                    
+
                     if not _G.__HT_MACRO_PLAYING then break end
 
                     updateMacroStatus("Chờ game tiếp theo...")
@@ -650,13 +660,13 @@ MacroSection:AddToggle("PlayMacroToggle", {
                     while _G.__HT_MACRO_PLAYING and wave.Value ~= 1 do
                         task.wait(1)
                     end
-                    
+
                     if _G.__HT_MACRO_PLAYING then
                         print("Wave = 1. Lặp lại macro.")
                         task.wait(2) -- Chờ một chút trước khi lặp lại
                     end
                 end
-                
+
                 macroPlaying = false
                 _G.__HT_MACRO_PLAYING = false
                 updateMacroStatus("Idle")
@@ -710,7 +720,7 @@ AutoSaveConfig()
 
 -- Thêm event listener để lưu ngay khi thay đổi giá trị
 local function setupSaveEvents()
-    for _, tab in pairs({JoinerTab, MacroTab, SettingsTab}) do
+    for _, tab in pairs({ JoinerTab, MacroTab, SettingsTab }) do
         if tab and tab._components then
             for _, element in pairs(tab._components) do
                 if element and element.OnChanged then
@@ -731,12 +741,12 @@ setupSaveEvents()
 -- Tạo logo để mở lại UI khi đã minimize
 task.spawn(function()
     local success, errorMsg = pcall(function()
-        if not getgenv().LoadedMobileUI == true then 
+        if not getgenv().LoadedMobileUI == true then
             getgenv().LoadedMobileUI = true
             local OpenUI = Instance.new("ScreenGui")
             local ImageButton = Instance.new("ImageButton")
             local UICorner = Instance.new("UICorner")
-            
+
             -- Kiểm tra môi trường
             if syn and syn.protect_gui then
                 syn.protect_gui(OpenUI)
@@ -746,29 +756,29 @@ task.spawn(function()
             else
                 OpenUI.Parent = game:GetService("CoreGui")
             end
-            
+
             OpenUI.Name = "OpenUI"
             OpenUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-            
+
             ImageButton.Parent = OpenUI
-            ImageButton.BackgroundColor3 = Color3.fromRGB(105,105,105)
+            ImageButton.BackgroundColor3 = Color3.fromRGB(105, 105, 105)
             ImageButton.BackgroundTransparency = 0.8
-            ImageButton.Position = UDim2.new(0.9,0,0.1,0)
-            ImageButton.Size = UDim2.new(0,50,0,50)
+            ImageButton.Position = UDim2.new(0.9, 0, 0.1, 0)
+            ImageButton.Size = UDim2.new(0, 50, 0, 50)
             ImageButton.Image = "rbxassetid://90319448802378" -- Logo HT Hub
             ImageButton.Draggable = true
             ImageButton.Transparency = 0.2
-            
-            UICorner.CornerRadius = UDim.new(0,200)
+
+            UICorner.CornerRadius = UDim.new(0, 200)
             UICorner.Parent = ImageButton
-            
+
             -- Khi click vào logo sẽ mở lại UI
             ImageButton.MouseButton1Click:Connect(function()
-                game:GetService("VirtualInputManager"):SendKeyEvent(true,Enum.KeyCode.LeftControl,false,game)
+                game:GetService("VirtualInputManager"):SendKeyEvent(true, Enum.KeyCode.LeftControl, false, game)
             end)
         end
     end)
-    
+
     if not success then
         warn("Lỗi khi tạo nút Logo UI: " .. tostring(errorMsg))
     end
