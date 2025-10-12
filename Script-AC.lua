@@ -409,7 +409,7 @@ local function startEndGameUIWatcher()
 
                             local successRewards, rewardsData = pcall(function()
                                 local rewardsHolder = player.PlayerGui:WaitForChild("EndGameUI"):WaitForChild("BG")
-                                :WaitForChild("Container"):WaitForChild("Rewards"):WaitForChild("Holder")
+                                    :WaitForChild("Container"):WaitForChild("Rewards"):WaitForChild("Holder")
                                 print("Found rewards holder with", #rewardsHolder:GetChildren(), "children")
 
                                 for _, rewardChild in ipairs(rewardsHolder:GetChildren()) do
@@ -643,7 +643,7 @@ WebhookSection:AddButton({
                         {
                             title = "Test Webhook",
                             description = string.format(
-                            "**Player:** %s\n**Level:** %d\n\nThis is a test webhook to verify the connection is working!",
+                                "**Player:** %s\n**Level:** %d\n\nThis is a test webhook to verify the connection is working!",
                                 playerName, playerLevel),
                             color = 0x00FF00,
                             fields = {
@@ -693,6 +693,138 @@ WebhookSection:AddButton({
 
             if not success then
                 warn("❌ Test webhook error:", result)
+            end
+        end)
+    end
+})
+
+-- Manual Webhook Button
+WebhookSection:AddButton({
+    Title = "Send Manual Webhook",
+    Description = "Gửi webhook thủ công với dữ liệu game hiện tại",
+    Callback = function()
+        if webhookURL == "" then
+            warn("Webhook URL is empty! Please enter a webhook URL first.")
+            return
+        end
+
+        print("Sending manual webhook...")
+
+        task.spawn(function()
+            local success, result = pcall(function()
+                local player = game:GetService("Players").LocalPlayer
+                local http = game:GetService("HttpService")
+
+                -- Get player info
+                local playerName = player.Name
+                local playerLevel = 0
+
+                -- Try to get level safely
+                local levelSuccess, levelValue = pcall(function()
+                    return player.Level.Value
+                end)
+                if levelSuccess then
+                    playerLevel = levelValue
+                else
+                    print("Could not get player level, using 0")
+                end
+
+                print("Manual - Player:", playerName, "Level:", playerLevel)
+
+                -- Get rewards (try to find EndGameUI)
+                local rewards = {}
+                local rewardsText = "No rewards found (EndGameUI not detected)"
+
+                local successRewards, rewardsData = pcall(function()
+                    local endGameUI = player.PlayerGui:FindFirstChild("EndGameUI")
+                    if endGameUI then
+                        local rewardsHolder = endGameUI:WaitForChild("BG"):WaitForChild("Container"):WaitForChild(
+                        "Rewards"):WaitForChild("Holder")
+                        print("Manual - Found rewards holder with", #rewardsHolder:GetChildren(), "children")
+
+                        for _, rewardChild in ipairs(rewardsHolder:GetChildren()) do
+                            if rewardChild:IsA("TextButton") or rewardChild:IsA("Frame") then
+                                local amountLabel = rewardChild:FindFirstChild("Amount")
+                                if amountLabel and amountLabel:IsA("TextLabel") then
+                                    table.insert(rewards, rewardChild.Name .. ": " .. amountLabel.Text)
+                                    print("Manual - Found reward:", rewardChild.Name, amountLabel.Text)
+                                end
+                            end
+                        end
+                    else
+                        print("Manual - EndGameUI not found, using default rewards")
+                    end
+                end)
+
+                if not successRewards then
+                    print("Manual - Error getting rewards:", rewardsData)
+                end
+
+                if #rewards > 0 then
+                    rewardsText = table.concat(rewards, "\n")
+                end
+
+                print("Manual - Final rewards:", rewardsText)
+
+                -- Create manual webhook payload
+                local payload = http:JSONEncode({
+                    username = "Anime Last Stand Notifier",
+                    avatar_url =
+                    "https://www.roblox.com/asset-thumbnail/image?assetId=90319448802378&width=420&height=420&format=png",
+                    embeds = {
+                        {
+                            title = "Manual Webhook",
+                            description = string.format(
+                            "**Player:** %s\n**Level:** %d\n\nThis is a manual webhook sent by user.", playerName,
+                                playerLevel),
+                            color = 0x0099FF,
+                            fields = {
+                                {
+                                    name = "Rewards",
+                                    value = rewardsText,
+                                    inline = false
+                                },
+                                {
+                                    name = "Status",
+                                    value = "✅ Manual webhook sent successfully!",
+                                    inline = false
+                                }
+                            },
+                            footer = {
+                                text = "HTHubALS - Manual Webhook",
+                                icon_url =
+                                "https://www.roblox.com/asset-thumbnail/image?assetId=90319448802378&width=420&height=420&format=png"
+                            },
+                            timestamp = os.date("!%Y-%m-%dT%H:%M:%S.000Z", os.time())
+                        }
+                    }
+                })
+
+                print("Manual payload created, sending webhook...")
+
+                -- Send webhook using request
+                local webhookSuccess, webhookResponse = pcall(function()
+                    return request({
+                        Url = webhookURL,
+                        Method = "POST",
+                        Headers = {
+                            ["Content-Type"] = "application/json"
+                        },
+                        Body = payload
+                    })
+                end)
+
+                if webhookSuccess then
+                    print("✅ Manual webhook sent successfully! Response:", webhookResponse)
+                    return true
+                else
+                    warn("❌ Failed to send manual webhook:", webhookResponse)
+                    return false
+                end
+            end)
+
+            if not success then
+                warn("❌ Manual webhook error:", result)
             end
         end)
     end
