@@ -345,7 +345,7 @@ local function startEndGameUIWatcher()
         endGameUIConnection = nil
     end
 
-    if not (autoRetryEnabled or autoNextEnabled or autoLeaveEnabled) then return end
+    if not (autoRetryEnabled or autoNextEnabled or autoLeaveEnabled or webhookEnabled) then return end
 
     local player = game:GetService("Players").LocalPlayer
     local playerGui = player:WaitForChild("PlayerGui", 5)
@@ -381,6 +381,7 @@ local function startEndGameUIWatcher()
 
                 -- Webhook logic
                 if webhookEnabled and webhookURL ~= "" then
+                    task.wait(2)
                     print("Webhook: Preparing to send data...")
                     task.spawn(function()
                         local success, result = pcall(function()
