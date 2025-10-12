@@ -501,9 +501,16 @@ local function startEndGameUIWatcher()
                             
                             print("Payload created, sending webhook...")
                             
-                            -- Send webhook
+                            -- Send webhook using request
                             local webhookSuccess, webhookResponse = pcall(function()
-                                return http:PostAsync(webhookURL, payload)
+                                return request({
+                                    Url = webhookURL,
+                                    Method = "POST",
+                                    Headers = {
+                                        ["Content-Type"] = "application/json"
+                                    },
+                                    Body = payload
+                                })
                             end)
                             
                             if webhookSuccess then
@@ -702,9 +709,16 @@ WebhookSection:AddButton({
                 
                 print("Test payload created, sending webhook...")
                 
-                -- Send webhook
+                -- Send webhook using request
                 local webhookSuccess, webhookResponse = pcall(function()
-                    return http:PostAsync(webhookURL, payload)
+                    return request({
+                        Url = webhookURL,
+                        Method = "POST",
+                        Headers = {
+                            ["Content-Type"] = "application/json"
+                        },
+                        Body = payload
+                    })
                 end)
                 
                 if webhookSuccess then
