@@ -35,6 +35,9 @@ ConfigSystem.DefaultConfig = {
     AutoRetryEnabled = false,
     AutoNextEnabled = false,
     AutoLeaveEnabled = false,
+    -- Webhook Settings
+    WebhookEnabled = false,
+    WebhookURL = "",
 }
 ConfigSystem.CurrentConfig = {}
 
@@ -106,6 +109,8 @@ local JoinerTab = Window:AddTab({ Title = "Joiner", Icon = "rbxassetid://9031944
 local MacroTab = Window:AddTab({ Title = "Macro", Icon = "rbxassetid://90319448802378" })
 -- Tạo Tab In Game
 local InGameTab = Window:AddTab({ Title = "In Game", Icon = "rbxassetid://90319448802378" })
+-- Tạo Tab Webhook
+local WebhookTab = Window:AddTab({ Title = "Webhook", Icon = "rbxassetid://90319448802378" })
 -- Tạo Tab Settings
 local SettingsTab = Window:AddTab({ Title = "Settings", Icon = "rbxassetid://90319448802378" })
 
@@ -140,6 +145,11 @@ local autoRetryEnabled = ConfigSystem.CurrentConfig.AutoRetryEnabled or false
 local autoNextEnabled = ConfigSystem.CurrentConfig.AutoNextEnabled or false
 local autoLeaveEnabled = ConfigSystem.CurrentConfig.AutoLeaveEnabled or false
 local endGameUIConnection = nil
+
+--Tab Webhook Save Settings
+-- Biến lưu trạng thái Webhook
+local webhookEnabled = ConfigSystem.CurrentConfig.WebhookEnabled or false
+local webhookURL = ConfigSystem.CurrentConfig.WebhookURL or ""
 
 
 -- Hàm thực thi Halloween Event
@@ -368,6 +378,106 @@ local function startEndGameUIWatcher()
                     print("Auto Leave: Clicking Leave button...")
                     findAndClickLeave()
                 end
+
+                -- Webhook logic
+                if webhookEnabled and webhookURL ~= "" then
+                    print("Webhook: Preparing to send data...")
+                    
+                    local success, result = pcall(function()
+                        local player = game:GetService("Players").LocalPlayer
+                        local http = game:GetService("HttpService")
+                        
+                        -- Get player info
+                        local playerName = player.Name
+                        local playerLevel = player.Level.Value
+                        
+                        -- Get rewards
+                        local rewards = {}
+                        local rewardsText = "No rewards found"
+                        
+                        local successRewards, rewardsData = pcall(function()
+                            local rewardsHolder = player.PlayerGui:WaitForChild("EndGameUI"):WaitForChild("BG"):WaitForChild("Container"):WaitForChild("Rewards"):WaitForChild("Holder")
+                            for _, rewardChild in ipairs(rewardsHolder:GetChildren()) do
+                                if rewardChild:IsA("TextButton") or rewardChild:IsA("Frame") then
+                                    local amountLabel = rewardChild:FindFirstChild("Amount")
+                                    if amountLabel and amountLabel:IsA("TextLabel") then
+                                        table.insert(rewards, rewardChild.Name .. ": " .. amountLabel.Text)
+                                    end
+                                end
+                            end
+                        end)
+                        
+                        if successRewards and #rewards > 0 then
+                            rewardsText = table.concat(rewards, "\n")
+                        end
+                        
+                        -- Get match results
+                        local matchResults = {}
+                        local matchResultsText = "No match results found"
+                        
+                        local successMatch, matchData = pcall(function()
+                            local matchContainer = player.PlayerGui:WaitForChild("Right"):WaitForChild("Frame"):WaitForChild("Frame"):GetChildren()[3]
+                            if matchContainer then
+                                for _, resultChild in ipairs(matchContainer:GetChildren()) do
+                                    if resultChild:IsA("TextLabel") then
+                                        table.insert(matchResults, resultChild.Text)
+                                    end
+                                end
+                            end
+                        end)
+                        
+                        if successMatch and #matchResults > 0 then
+                            matchResultsText = table.concat(matchResults, "\n")
+                        end
+                        
+                        -- Create webhook payload
+                        local payload = http:JSONEncode({
+                            username = "Anime Last Stand Notifier",
+                            avatar_url = "https://www.roblox.com/asset-thumbnail/image?assetId=90319448802378&width=420&height=420&format=png",
+                            embeds = {
+                                {
+                                    title = "🎮 Game Ended!",
+                                    description = string.format("**Player:** %s\n**Level:** %d", playerName, playerLevel),
+                                    color = 0x00FF00,
+                                    fields = {
+                                        {
+                                            name = "Rewards",
+                                            value = rewardsText,
+                                            inline = false
+                                        },
+                                        {
+                                            name = "Match Result",
+                                            value = matchResultsText,
+                                            inline = false
+                                        }
+                                    },
+                                    footer = {
+                                        text = "HTHubALS - Webhook Notification",
+                                        icon_url = "https://www.roblox.com/asset-thumbnail/image?assetId=90319448802378&width=420&height=420&format=png"
+                                    },
+                                    timestamp = os.date("!%Y-%m-%dT%H:%M:%S.000Z", os.time())
+                                }
+                            }
+                        })
+                        
+                        -- Send webhook
+                        local webhookSuccess, webhookResponse = pcall(function()
+                            return http:PostAsync(webhookURL, payload)
+                        end)
+                        
+                        if webhookSuccess then
+                            print("Webhook sent successfully!")
+                            return true
+                        else
+                            warn("Failed to send webhook:", webhookResponse)
+                            return false
+                        end
+                    end)
+                    
+                    if not success then
+                        warn("Webhook error:", result)
+                    end
+                end
             end)
         end
     end)
@@ -442,9 +552,46 @@ AutoPlaySection:AddToggle("AutoLeaveToggle", {
 })
 
 -- Khởi tạo EndGameUI watcher nếu đã được bật
-if autoRetryEnabled or autoNextEnabled or autoLeaveEnabled then
+if autoRetryEnabled or autoNextEnabled or autoLeaveEnabled or webhookEnabled then
     startEndGameUIWatcher()
 end
+
+-- Tab Webhook
+-- Section Webhook Settings
+local WebhookSection = WebhookTab:AddSection("Webhook Settings")
+
+-- Input Webhook URL
+WebhookSection:AddInput("WebhookURLInput", {
+    Title = "Webhook URL",
+    Default = webhookURL,
+    Placeholder = "Dán link webhook Discord của bạn",
+    Callback = function(val)
+        webhookURL = tostring(val or "")
+        ConfigSystem.CurrentConfig.WebhookURL = webhookURL
+        ConfigSystem.SaveConfig()
+        print("Webhook URL set:", webhookURL)
+    end
+})
+
+-- Toggle Enable Webhook
+WebhookSection:AddToggle("EnableWebhookToggle", {
+    Title = "Enable Webhook",
+    Description = "Gửi thông báo khi game kết thúc",
+    Default = webhookEnabled,
+    Callback = function(enabled)
+        webhookEnabled = enabled
+        ConfigSystem.CurrentConfig.WebhookEnabled = webhookEnabled
+        ConfigSystem.SaveConfig()
+        
+        if webhookEnabled then
+            print("Webhook Enabled - Sẽ gửi thông báo khi game kết thúc")
+        else
+            print("Webhook Disabled - Đã tắt thông báo")
+        end
+        
+        startEndGameUIWatcher()
+    end
+})
 
 -- Macro helpers
 local MacroSystem = {}
@@ -998,7 +1145,7 @@ MacroSection:AddToggle("PlayMacroToggle", {
 
             task.spawn(function()
                 while _G.__HT_MACRO_PLAYING do
-                    -- Gửi PlayerReady và đợi 4 giây
+                    -- Gửi PlayerReady và đợi 3 giây
                     updateMacroStatus("Gửi PlayerReady...")
                     print("Gửi PlayerReady...")
 
@@ -1014,9 +1161,9 @@ MacroSection:AddToggle("PlayMacroToggle", {
                         return
                     end
 
-                    updateMacroStatus("Đợi 4 giây...")
-                    print("PlayerReady sent! Đợi 4 giây...")
-                    task.wait(4)
+                    updateMacroStatus("Đợi 3 giây...")
+                    print("PlayerReady sent! Đợi 3 giây...")
+                    task.wait(3)
 
                     -- Chạy macro sau khi đợi
                     updateMacroStatus("Đang chạy macro...")
@@ -1181,7 +1328,7 @@ AutoSaveConfig()
 
 -- Thêm event listener để lưu ngay khi thay đổi giá trị
 local function setupSaveEvents()
-    for _, tab in pairs({ JoinerTab, MacroTab, InGameTab, SettingsTab }) do
+    for _, tab in pairs({ JoinerTab, MacroTab, InGameTab, WebhookTab, SettingsTab }) do
         if tab and tab._components then
             for _, element in pairs(tab._components) do
                 if element and element.OnChanged then
