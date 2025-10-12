@@ -388,31 +388,33 @@ local function startEndGameUIWatcher()
                             local player = game:GetService("Players").LocalPlayer
                             local http = game:GetService("HttpService")
 
-                            -- Get player info
+                            -- lấy thông tin người chơi
                             local playerName = player.Name
                             local playerLevel = 0
 
-                            -- Try to get level safely
+                            -- lấy level người chơi
                             local levelSuccess, levelValue = pcall(function()
                                 return player.Level.Value
                             end)
                             if levelSuccess then
                                 playerLevel = levelValue
                             else
-                                print("Could not get player level, using 0")
+                                print("Không thể lấy level người chơi, sử dụng 0")
                             end
 
                             print("Player:", playerName, "Level:", playerLevel)
 
-                            -- Get rewards
+                            -- lấy rewards
                             local rewards = {}
                             local rewardsText = "No rewards found"
 
+                            -- lấy rewards holder
                             local successRewards, rewardsData = pcall(function()
                                 local rewardsHolder = player.PlayerGui:WaitForChild("EndGameUI"):WaitForChild("BG")
                                     :WaitForChild("Container"):WaitForChild("Rewards"):WaitForChild("Holder")
                                 print("Found rewards holder with", #rewardsHolder:GetChildren(), "children")
 
+                                -- lấy rewards holder children
                                 for _, rewardChild in ipairs(rewardsHolder:GetChildren()) do
                                     if rewardChild:IsA("TextButton") or rewardChild:IsA("Frame") then
                                         local amountLabel = rewardChild:FindFirstChild("Amount")
