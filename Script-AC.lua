@@ -118,10 +118,10 @@ local EventSection = JoinerTab:AddSection("Event")
 local AutoPlaySection = InGameTab:AddSection("Auto Play")
 
 -- Tab Settings
--- Settings tab configuration in Settings tab
-local SettingsSection = SettingsTab:AddSection("Script Settings")
 -- Sell All Unit Section in Settings tab
 local SellAllSection = SettingsTab:AddSection("Sell All Unit")
+-- Settings tab configuration in Settings tab
+local SettingsSection = SettingsTab:AddSection("Script Settings")
 
 --Tab Joiner Save Settings
 -- Biến lưu trạng thái Halloween Event
