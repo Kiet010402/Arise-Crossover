@@ -64,7 +64,7 @@ ConfigSystem.LoadConfig = function()
         local parseSuccess, data = pcall(function()
             return game:GetService("HttpService"):JSONDecode(content)
         end)
-        
+
         if parseSuccess and data then
             ConfigSystem.CurrentConfig = data
             print("Config loaded successfully!")
@@ -206,18 +206,19 @@ EventSection:AddToggle("HalloweenEventToggle", {
 local function findAndClickRetry()
     local Players = game:GetService("Players")
     local VirtualInputManager = game:GetService("VirtualInputManager")
-    
+
     local success, result = pcall(function()
         local player = Players.LocalPlayer
-        local retryButton = player.PlayerGui:WaitForChild("EndGameUI"):WaitForChild("BG"):WaitForChild("Buttons"):WaitForChild("Retry")
-        
+        local retryButton = player.PlayerGui:WaitForChild("EndGameUI"):WaitForChild("BG"):WaitForChild("Buttons")
+            :WaitForChild("Retry")
+
         if retryButton and retryButton:IsA("GuiButton") then
             local absolutePosition = retryButton.AbsolutePosition
             local absoluteSize = retryButton.AbsoluteSize
-            
+
             local centerX = absolutePosition.X + (absoluteSize.X / 2)
             local centerY = absolutePosition.Y + (absoluteSize.Y / 2) + 55
-            
+
             -- Sử dụng task.spawn để không block UI
             task.spawn(function()
                 VirtualInputManager:SendMouseMoveEvent(centerX, centerY, game)
@@ -226,7 +227,7 @@ local function findAndClickRetry()
                 task.wait(0.05)
                 VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, false, game, 0)
             end)
-            
+
             print("Đã click vào nút Retry tại vị trí:", centerX, centerY)
             return true
         else
@@ -234,12 +235,12 @@ local function findAndClickRetry()
             return false
         end
     end)
-    
+
     if not success then
         warn("Lỗi khi click Retry:", result)
         return false
     end
-    
+
     return result
 end
 
@@ -247,18 +248,19 @@ end
 local function findAndClickNext()
     local Players = game:GetService("Players")
     local VirtualInputManager = game:GetService("VirtualInputManager")
-    
+
     local success, result = pcall(function()
         local player = Players.LocalPlayer
-        local nextButton = player.PlayerGui:WaitForChild("EndGameUI"):WaitForChild("BG"):WaitForChild("Buttons"):WaitForChild("Next")
-        
+        local nextButton = player.PlayerGui:WaitForChild("EndGameUI"):WaitForChild("BG"):WaitForChild("Buttons")
+            :WaitForChild("Next")
+
         if nextButton and nextButton:IsA("GuiButton") then
             local absolutePosition = nextButton.AbsolutePosition
             local absoluteSize = nextButton.AbsoluteSize
-            
+
             local centerX = absolutePosition.X + (absoluteSize.X / 2)
             local centerY = absolutePosition.Y + (absoluteSize.Y / 2) + 55
-            
+
             -- Sử dụng task.spawn để không block UI
             task.spawn(function()
                 VirtualInputManager:SendMouseMoveEvent(centerX, centerY, game)
@@ -267,7 +269,7 @@ local function findAndClickNext()
                 task.wait(0.05)
                 VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, false, game, 0)
             end)
-            
+
             print("Đã click vào nút Next tại vị trí:", centerX, centerY)
             return true
         else
@@ -275,12 +277,12 @@ local function findAndClickNext()
             return false
         end
     end)
-    
+
     if not success then
         warn("Lỗi khi click Next:", result)
         return false
     end
-    
+
     return result
 end
 
@@ -288,18 +290,19 @@ end
 local function findAndClickLeave()
     local Players = game:GetService("Players")
     local VirtualInputManager = game:GetService("VirtualInputManager")
-    
+
     local success, result = pcall(function()
         local player = Players.LocalPlayer
-        local leaveButton = player.PlayerGui:WaitForChild("EndGameUI"):WaitForChild("BG"):WaitForChild("Buttons"):WaitForChild("Leave")
-        
+        local leaveButton = player.PlayerGui:WaitForChild("EndGameUI"):WaitForChild("BG"):WaitForChild("Buttons")
+            :WaitForChild("Leave")
+
         if leaveButton and leaveButton:IsA("GuiButton") then
             local absolutePosition = leaveButton.AbsolutePosition
             local absoluteSize = leaveButton.AbsoluteSize
-            
+
             local centerX = absolutePosition.X + (absoluteSize.X / 2)
             local centerY = absolutePosition.Y + (absoluteSize.Y / 2) + 55
-            
+
             -- Sử dụng task.spawn để không block UI
             task.spawn(function()
                 VirtualInputManager:SendMouseMoveEvent(centerX, centerY, game)
@@ -308,7 +311,7 @@ local function findAndClickLeave()
                 task.wait(0.05)
                 VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, false, game, 0)
             end)
-            
+
             print("Đã click vào nút Leave tại vị trí:", centerX, centerY)
             return true
         else
@@ -316,12 +319,12 @@ local function findAndClickLeave()
             return false
         end
     end)
-    
+
     if not success then
         warn("Lỗi khi click Leave:", result)
         return false
     end
-    
+
     return result
 end
 
@@ -331,35 +334,35 @@ local function startEndGameUIWatcher()
         endGameUIConnection:Disconnect()
         endGameUIConnection = nil
     end
-    
+
     if not (autoRetryEnabled or autoNextEnabled or autoLeaveEnabled) then return end
-    
+
     local player = game:GetService("Players").LocalPlayer
     local playerGui = player:WaitForChild("PlayerGui", 5)
     if not playerGui then
         warn("Không tìm thấy PlayerGui")
         return
     end
-    
+
     endGameUIConnection = playerGui.ChildAdded:Connect(function(child)
         if child.Name == "EndGameUI" then
             print("EndGameUI detected! Waiting 2 seconds...")
-            
+
             -- Sử dụng task.spawn để không block UI
             task.spawn(function()
                 task.wait(2)
-                
+
                 if autoRetryEnabled then
                     print("Auto Retry: Clicking Retry button...")
                     findAndClickRetry()
                 end
-                
+
                 if autoNextEnabled then
                     task.wait(3) -- Đợi thêm 3s như trong code gốc
                     print("Auto Next: Clicking Next button...")
                     findAndClickNext()
                 end
-                
+
                 if autoLeaveEnabled then
                     task.wait(5) -- Đợi 5s như yêu cầu
                     print("Auto Leave: Clicking Leave button...")
@@ -387,13 +390,13 @@ AutoPlaySection:AddToggle("AutoRetryToggle", {
         autoRetryEnabled = enabled
         ConfigSystem.CurrentConfig.AutoRetryEnabled = autoRetryEnabled
         ConfigSystem.SaveConfig()
-        
+
         if autoRetryEnabled then
             print("Auto Retry Enabled - Tự động click Retry")
         else
             print("Auto Retry Disabled - Đã tắt tự động click Retry")
         end
-        
+
         startEndGameUIWatcher()
     end
 })
@@ -407,13 +410,13 @@ AutoPlaySection:AddToggle("AutoNextToggle", {
         autoNextEnabled = enabled
         ConfigSystem.CurrentConfig.AutoNextEnabled = autoNextEnabled
         ConfigSystem.SaveConfig()
-        
+
         if autoNextEnabled then
             print("Auto Next Enabled - Tự động click Next")
         else
             print("Auto Next Disabled - Đã tắt tự động click Next")
         end
-        
+
         startEndGameUIWatcher()
     end
 })
@@ -427,13 +430,13 @@ AutoPlaySection:AddToggle("AutoLeaveToggle", {
         autoLeaveEnabled = enabled
         ConfigSystem.CurrentConfig.AutoLeaveEnabled = autoLeaveEnabled
         ConfigSystem.SaveConfig()
-        
+
         if autoLeaveEnabled then
             print("Auto Leave Enabled - Tự động click Leave")
         else
             print("Auto Leave Disabled - Đã tắt tự động click Leave")
         end
-        
+
         startEndGameUIWatcher()
     end
 })
@@ -965,7 +968,7 @@ MacroSection:AddToggle("PlayMacroToggle", {
         -- Lưu trạng thái play macro
         ConfigSystem.CurrentConfig.PlayMacroEnabled = isOn
         ConfigSystem.SaveConfig()
-        
+
         if isOn then
             if not selectedMacro or selectedMacro == "" then
                 warn("No macro selected")
@@ -1063,23 +1066,24 @@ local function startSellAllWatcher()
         waveConnection:Disconnect()
         waveConnection = nil
     end
-    
+
     if not sellAllEnabled then return end
-    
+
     local wave = game:GetService("ReplicatedStorage"):WaitForChild("Wave", 5)
     if not wave then
         warn("Không tìm thấy Wave object")
         return
     end
-    
+
     waveConnection = wave.Changed:Connect(function(newVal)
         if sellAllEnabled and tonumber(newVal) == sellAllWave then
             print("Wave", sellAllWave, "reached! Selling all units...")
-            
+
             local success, err = pcall(function()
-                game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("UnitManager"):WaitForChild("SellAll"):FireServer()
+                game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("UnitManager"):WaitForChild(
+                    "SellAll"):FireServer()
             end)
-            
+
             if success then
                 print("Sell All executed successfully!")
             else
@@ -1129,7 +1133,7 @@ SellAllSection:AddToggle("SellAllToggle", {
         sellAllEnabled = enabled
         ConfigSystem.CurrentConfig.SellAllEnabled = sellAllEnabled
         ConfigSystem.SaveConfig()
-        
+
         if sellAllEnabled then
             print("Sell All Enabled - Tự động sell all units tại wave", sellAllWave)
             startSellAllWatcher()
@@ -1196,12 +1200,12 @@ setupSaveEvents()
 -- Tạo logo để mở lại UI khi đã minimize
 task.spawn(function()
     local success, errorMsg = pcall(function()
-        if not getgenv().LoadedMobileUI == true then 
+        if not getgenv().LoadedMobileUI == true then
             getgenv().LoadedMobileUI = true
             local OpenUI = Instance.new("ScreenGui")
             local ImageButton = Instance.new("ImageButton")
             local UICorner = Instance.new("UICorner")
-            
+
             -- Kiểm tra môi trường
             if syn and syn.protect_gui then
                 syn.protect_gui(OpenUI)
@@ -1211,10 +1215,10 @@ task.spawn(function()
             else
                 OpenUI.Parent = game:GetService("CoreGui")
             end
-            
+
             OpenUI.Name = "OpenUI"
             OpenUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-            
+
             ImageButton.Parent = OpenUI
             ImageButton.BackgroundColor3 = Color3.fromRGB(105, 105, 105)
             ImageButton.BackgroundTransparency = 0.8
@@ -1223,17 +1227,17 @@ task.spawn(function()
             ImageButton.Image = "rbxassetid://90319448802378" -- Logo HT Hub
             ImageButton.Draggable = true
             ImageButton.Transparency = 0.2
-            
+
             UICorner.CornerRadius = UDim.new(0, 200)
             UICorner.Parent = ImageButton
-            
+
             -- Khi click vào logo sẽ mở lại UI
             ImageButton.MouseButton1Click:Connect(function()
                 game:GetService("VirtualInputManager"):SendKeyEvent(true, Enum.KeyCode.LeftControl, false, game)
             end)
         end
     end)
-    
+
     if not success then
         warn("Lỗi khi tạo nút Logo UI: " .. tostring(errorMsg))
     end
