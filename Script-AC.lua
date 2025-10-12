@@ -382,101 +382,145 @@ local function startEndGameUIWatcher()
                 -- Webhook logic
                 if webhookEnabled and webhookURL ~= "" then
                     print("Webhook: Preparing to send data...")
+                    print("Webhook URL:", webhookURL)
+                    print("Webhook Enabled:", webhookEnabled)
                     
-                    local success, result = pcall(function()
-                        local player = game:GetService("Players").LocalPlayer
-                        local http = game:GetService("HttpService")
-                        
-                        -- Get player info
-                        local playerName = player.Name
-                        local playerLevel = player.Level.Value
-                        
-                        -- Get rewards
-                        local rewards = {}
-                        local rewardsText = "No rewards found"
-                        
-                        local successRewards, rewardsData = pcall(function()
-                            local rewardsHolder = player.PlayerGui:WaitForChild("EndGameUI"):WaitForChild("BG"):WaitForChild("Container"):WaitForChild("Rewards"):WaitForChild("Holder")
-                            for _, rewardChild in ipairs(rewardsHolder:GetChildren()) do
-                                if rewardChild:IsA("TextButton") or rewardChild:IsA("Frame") then
-                                    local amountLabel = rewardChild:FindFirstChild("Amount")
-                                    if amountLabel and amountLabel:IsA("TextLabel") then
-                                        table.insert(rewards, rewardChild.Name .. ": " .. amountLabel.Text)
+                    task.spawn(function()
+                        local success, result = pcall(function()
+                            local player = game:GetService("Players").LocalPlayer
+                            local http = game:GetService("HttpService")
+                            
+                            -- Get player info
+                            local playerName = player.Name
+                            local playerLevel = 0
+                            
+                            -- Try to get level safely
+                            local levelSuccess, levelValue = pcall(function()
+                                return player.Level.Value
+                            end)
+                            if levelSuccess then
+                                playerLevel = levelValue
+                            else
+                                print("Could not get player level, using 0")
+                            end
+                            
+                            print("Player:", playerName, "Level:", playerLevel)
+                            
+                            -- Get rewards
+                            local rewards = {}
+                            local rewardsText = "No rewards found"
+                            
+                            local successRewards, rewardsData = pcall(function()
+                                local rewardsHolder = player.PlayerGui:WaitForChild("EndGameUI"):WaitForChild("BG"):WaitForChild("Container"):WaitForChild("Rewards"):WaitForChild("Holder")
+                                print("Found rewards holder with", #rewardsHolder:GetChildren(), "children")
+                                
+                                for _, rewardChild in ipairs(rewardsHolder:GetChildren()) do
+                                    if rewardChild:IsA("TextButton") or rewardChild:IsA("Frame") then
+                                        local amountLabel = rewardChild:FindFirstChild("Amount")
+                                        if amountLabel and amountLabel:IsA("TextLabel") then
+                                            table.insert(rewards, rewardChild.Name .. ": " .. amountLabel.Text)
+                                            print("Found reward:", rewardChild.Name, amountLabel.Text)
+                                        end
                                     end
                                 end
+                            end)
+                            
+                            if not successRewards then
+                                print("Error getting rewards:", rewardsData)
                             end
-                        end)
-                        
-                        if successRewards and #rewards > 0 then
-                            rewardsText = table.concat(rewards, "\n")
-                        end
-                        
-                        -- Get match results
-                        local matchResults = {}
-                        local matchResultsText = "No match results found"
-                        
-                        local successMatch, matchData = pcall(function()
-                            local matchContainer = player.PlayerGui:WaitForChild("Right"):WaitForChild("Frame"):WaitForChild("Frame"):GetChildren()[3]
-                            if matchContainer then
-                                for _, resultChild in ipairs(matchContainer:GetChildren()) do
-                                    if resultChild:IsA("TextLabel") then
-                                        table.insert(matchResults, resultChild.Text)
+                            
+                            if #rewards > 0 then
+                                rewardsText = table.concat(rewards, "\n")
+                            end
+                            
+                            -- Get match results
+                            local matchResults = {}
+                            local matchResultsText = "No match results found"
+                            
+                            local successMatch, matchData = pcall(function()
+                                local rightFrame = player.PlayerGui:WaitForChild("Right")
+                                local frame1 = rightFrame:WaitForChild("Frame")
+                                local frame2 = frame1:WaitForChild("Frame")
+                                local children = frame2:GetChildren()
+                                
+                                print("Found", #children, "children in match results container")
+                                
+                                if #children >= 3 then
+                                    local matchContainer = children[3]
+                                    print("Match container type:", matchContainer.ClassName)
+                                    
+                                    for _, resultChild in ipairs(matchContainer:GetChildren()) do
+                                        if resultChild:IsA("TextLabel") then
+                                            table.insert(matchResults, resultChild.Text)
+                                            print("Found match result:", resultChild.Text)
+                                        end
                                     end
                                 end
+                            end)
+                            
+                            if not successMatch then
+                                print("Error getting match results:", matchData)
                             end
-                        end)
-                        
-                        if successMatch and #matchResults > 0 then
-                            matchResultsText = table.concat(matchResults, "\n")
-                        end
-                        
-                        -- Create webhook payload
-                        local payload = http:JSONEncode({
-                            username = "Anime Last Stand Notifier",
-                            avatar_url = "https://www.roblox.com/asset-thumbnail/image?assetId=90319448802378&width=420&height=420&format=png",
-                            embeds = {
-                                {
-                                    title = "🎮 Game Ended!",
-                                    description = string.format("**Player:** %s\n**Level:** %d", playerName, playerLevel),
-                                    color = 0x00FF00,
-                                    fields = {
-                                        {
-                                            name = "Rewards",
-                                            value = rewardsText,
-                                            inline = false
+                            
+                            if #matchResults > 0 then
+                                matchResultsText = table.concat(matchResults, "\n")
+                            end
+                            
+                            print("Final rewards:", rewardsText)
+                            print("Final match results:", matchResultsText)
+                            
+                            -- Create webhook payload
+                            local payload = http:JSONEncode({
+                                username = "Anime Last Stand Notifier",
+                                avatar_url = "https://www.roblox.com/asset-thumbnail/image?assetId=90319448802378&width=420&height=420&format=png",
+                                embeds = {
+                                    {
+                                        title = "Game Ended!",
+                                        description = string.format("**Player:** %s\n**Level:** %d", playerName, playerLevel),
+                                        color = 0x00FF00,
+                                        fields = {
+                                            {
+                                                name = "Rewards",
+                                                value = rewardsText,
+                                                inline = false
+                                            },
+                                            {
+                                                name = "Match Result",
+                                                value = matchResultsText,
+                                                inline = false
+                                            }
                                         },
-                                        {
-                                            name = "Match Result",
-                                            value = matchResultsText,
-                                            inline = false
-                                        }
-                                    },
-                                    footer = {
-                                        text = "HTHubALS - Webhook Notification",
-                                        icon_url = "https://www.roblox.com/asset-thumbnail/image?assetId=90319448802378&width=420&height=420&format=png"
-                                    },
-                                    timestamp = os.date("!%Y-%m-%dT%H:%M:%S.000Z", os.time())
+                                        footer = {
+                                            text = "HTHubALS - Webhook Notification",
+                                            icon_url = "https://www.roblox.com/asset-thumbnail/image?assetId=90319448802378&width=420&height=420&format=png"
+                                        },
+                                        timestamp = os.date("!%Y-%m-%dT%H:%M:%S.000Z", os.time())
+                                    }
                                 }
-                            }
-                        })
-                        
-                        -- Send webhook
-                        local webhookSuccess, webhookResponse = pcall(function()
-                            return http:PostAsync(webhookURL, payload)
+                            })
+                            
+                            print("Payload created, sending webhook...")
+                            
+                            -- Send webhook
+                            local webhookSuccess, webhookResponse = pcall(function()
+                                return http:PostAsync(webhookURL, payload)
+                            end)
+                            
+                            if webhookSuccess then
+                                print("Webhook sent successfully! Response:", webhookResponse)
+                                return true
+                            else
+                                warn("Failed to send webhook:", webhookResponse)
+                                return false
+                            end
                         end)
                         
-                        if webhookSuccess then
-                            print("Webhook sent successfully!")
-                            return true
-                        else
-                            warn("Failed to send webhook:", webhookResponse)
-                            return false
+                        if not success then
+                            warn("Webhook error:", result)
                         end
                     end)
-                    
-                    if not success then
-                        warn("Webhook error:", result)
-                    end
+                else
+                    print("Webhook not enabled or URL empty. Enabled:", webhookEnabled, "URL:", webhookURL)
                 end
             end)
         end
@@ -590,6 +634,92 @@ WebhookSection:AddToggle("EnableWebhookToggle", {
         end
         
         startEndGameUIWatcher()
+    end
+})
+
+-- Test Webhook Button
+WebhookSection:AddButton({
+    Title = "Test Webhook",
+    Description = "Gửi webhook test để kiểm tra",
+    Callback = function()
+        if webhookURL == "" then
+            warn("Webhook URL is empty! Please enter a webhook URL first.")
+            return
+        end
+        
+        print("Testing webhook...")
+        
+        task.spawn(function()
+            local success, result = pcall(function()
+                local player = game:GetService("Players").LocalPlayer
+                local http = game:GetService("HttpService")
+                
+                -- Get player info
+                local playerName = player.Name
+                local playerLevel = 0
+                
+                -- Try to get level safely
+                local levelSuccess, levelValue = pcall(function()
+                    return player.Level.Value
+                end)
+                if levelSuccess then
+                    playerLevel = levelValue
+                else
+                    print("Could not get player level, using 0")
+                end
+                
+                print("Test - Player:", playerName, "Level:", playerLevel)
+                
+                -- Create test webhook payload
+                local payload = http:JSONEncode({
+                    username = "Anime Last Stand Notifier",
+                    avatar_url = "https://www.roblox.com/asset-thumbnail/image?assetId=90319448802378&width=420&height=420&format=png",
+                    embeds = {
+                        {
+                            title = "Test Webhook",
+                            description = string.format("**Player:** %s\n**Level:** %d\n\nThis is a test webhook to verify the connection is working!", playerName, playerLevel),
+                            color = 0x00FF00,
+                            fields = {
+                                {
+                                    name = "Status",
+                                    value = "✅ Webhook connection successful!",
+                                    inline = false
+                                },
+                                {
+                                    name = "Time",
+                                    value = os.date("%Y-%m-%d %H:%M:%S"),
+                                    inline = false
+                                }
+                            },
+                            footer = {
+                                text = "HTHubALS - Test Webhook",
+                                icon_url = "https://www.roblox.com/asset-thumbnail/image?assetId=90319448802378&width=420&height=420&format=png"
+                            },
+                            timestamp = os.date("!%Y-%m-%dT%H:%M:%S.000Z", os.time())
+                        }
+                    }
+                })
+                
+                print("Test payload created, sending webhook...")
+                
+                -- Send webhook
+                local webhookSuccess, webhookResponse = pcall(function()
+                    return http:PostAsync(webhookURL, payload)
+                end)
+                
+                if webhookSuccess then
+                    print("✅ Test webhook sent successfully! Response:", webhookResponse)
+                    return true
+                else
+                    warn("❌ Failed to send test webhook:", webhookResponse)
+                    return false
+                end
+            end)
+            
+            if not success then
+                warn("❌ Test webhook error:", result)
+            end
+        end)
     end
 })
 
