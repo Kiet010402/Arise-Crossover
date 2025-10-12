@@ -943,7 +943,7 @@ local function executeMacro(commands)
         if not _G.__HT_MACRO_PLAYING then break end
 
         print(string.format("Thực thi STT %d (Yêu cầu tiền: %d)", command.stt, command.money))
-
+        
         local loadOk, fnOrErr = pcall(function() return loadstring(command.code) end)
         if loadOk and type(fnOrErr) == "function" then
             local runOk, runErr = pcall(fnOrErr)
@@ -953,8 +953,10 @@ local function executeMacro(commands)
         else
             warn(string.format("Lỗi khi tải code cho STT %d: %s", command.stt, tostring(fnOrErr)))
         end
-
-        task.wait(0.1) -- Thêm một khoảng chờ nhỏ giữa các lệnh để tránh quá tải
+        
+        -- Đợi 2 giây giữa các STT để đọc chậm
+        print(string.format("Đợi 2 giây trước khi thực thi STT tiếp theo..."))
+        task.wait(2)
     end
     -- Hoàn tất macro
     updateMacroStatus("Macro Completed")
