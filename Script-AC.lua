@@ -1,3 +1,13 @@
+-- Chỉ chạy script nếu đúng GameID
+do
+    local ok, gameId = pcall(function()
+        return game.GameId
+    end)
+    if not ok or tonumber(gameId) ~= 4509896324 then
+        return
+    end
+end
+
 -- Load UI Library với error handling
 local success, err = pcall(function()
     Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
