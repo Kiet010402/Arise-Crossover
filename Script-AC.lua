@@ -201,11 +201,16 @@ end
 
 --Hàm Auto Hide UI
 local function applyAutoHideUI()
-    if autoHideUIEnabled then
+    if not autoHideUIEnabled then return end
+    task.spawn(function()
+        task.wait(0.3)
         pcall(function()
-            game:GetService("VirtualInputManager"):SendKeyEvent(true, Enum.KeyCode.LeftControl, false, game)
+            local vim = game:GetService("VirtualInputManager")
+            vim:SendKeyEvent(true, Enum.KeyCode.LeftControl, false, game)
+            task.wait(0.05)
+            vim:SendKeyEvent(false, Enum.KeyCode.LeftControl, false, game)
         end)
-    end
+    end)
 end
 
 
