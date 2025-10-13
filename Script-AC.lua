@@ -539,7 +539,7 @@ local function startEndGameUIWatcher()
                                             {
                                                 name = "Match Result",
                                                 value = string.format(
-                                                "**Result:** %s\n**Time:** %s\n**Wave:** %s\n\n**Match:**\n%s",
+                                                    "**Result:** %s\n**Time:** %s\n**Wave:** %s\n\n**Match:**\n%s",
                                                     result, elapsedTime, wave, matchResultsText),
                                                 inline = false
                                             }
