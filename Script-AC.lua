@@ -188,7 +188,7 @@ local function startAntiAFK()
         pcall(function()
             VirtualUser:CaptureController()
             VirtualUser:ClickButton2(Vector2.new(0, 0),
-            workspace.CurrentCamera and workspace.CurrentCamera.CFrame or CFrame.new())
+                workspace.CurrentCamera and workspace.CurrentCamera.CFrame or CFrame.new())
         end)
     end)
 end
@@ -959,7 +959,7 @@ local MacroSection = MacroTab:AddSection("Macro Recorder")
 -- Dropdown select macro
 local MacroDropdown = MacroSection:AddDropdown("MacroSelect", {
     Title = "Select Macro",
-    Description = "Select macro",
+    Description = "",
     Values = listMacros(),
     Default = selectedMacro ~= "" and selectedMacro or nil,
     Callback = function(val)
