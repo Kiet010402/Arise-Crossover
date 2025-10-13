@@ -105,6 +105,9 @@ local Window = Fluent:CreateWindow({
     MinimizeKey = Enum.KeyCode.LeftControl
 })
 
+-- Mở tab Joiner khi khởi động
+Window:SelectTab(1) -- Tab đầu tiên là Joiner
+
 -- Hệ thống Tạo Tab
 -- Tạo Tab Joiner
 local JoinerTab = Window:AddTab({ Title = "Joiner", Icon = "rbxassetid://90319448802378" })
@@ -389,7 +392,7 @@ local function startEndGameUIWatcher()
 
                 -- Webhook logic
                 if webhookEnabled and webhookURL ~= "" then
-                    task.wait(0.5)
+                    task.wait(1)
                     print("Webhook: Preparing to send data...")
                     task.spawn(function()
                         local success, result = pcall(function()
@@ -535,7 +538,7 @@ local function startEndGameUIWatcher()
                                 embeds = {
                                     {
                                         title = "Game Ended!",
-                                        description = string.format("**Player:** ||%s||\n**Level:** %d", playerName,
+                                        description = string.format("**Player:** |%s|\n**Level:** %d", playerName,
                                             playerLevel),
                                         color = resultColor,
                                         fields = {
@@ -1521,7 +1524,7 @@ SettingsSection:AddToggle("AntiAFKToggle", {
         antiAFKEnabled = enabled
         ConfigSystem.CurrentConfig.AntiAFKEnabled = antiAFKEnabled
         ConfigSystem.SaveConfig()
-
+        
         if antiAFKEnabled then
             print("Anti AFK Enabled - Tự động chống AFK")
             startAntiAFK()
@@ -1540,7 +1543,7 @@ SettingsSection:AddToggle("AutoHideUIToggle", {
         autoHideUIEnabled = enabled
         ConfigSystem.CurrentConfig.AutoHideUIEnabled = autoHideUIEnabled
         ConfigSystem.SaveConfig()
-
+        
         if autoHideUIEnabled then
             print("Auto Hide UI Enabled - UI sẽ tự động ẩn")
             task.spawn(handleAutoHideUI)
@@ -1598,7 +1601,7 @@ setupSaveEvents()
 -- Anti AFK System
 local function startAntiAFK()
     if not antiAFKEnabled then return end
-
+    
     task.spawn(function()
         while antiAFKEnabled do
             task.wait(30) -- Chờ 30 giây
