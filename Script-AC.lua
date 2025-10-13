@@ -38,9 +38,8 @@ ConfigSystem.DefaultConfig = {
     -- Webhook Settings
     WebhookEnabled = false,
     WebhookURL = "",
-    -- Script Settings
+    -- Anti AFK
     AntiAFKEnabled = true,
-    AutoHideUIEnabled = false,
 }
 ConfigSystem.CurrentConfig = {}
 
@@ -105,9 +104,6 @@ local Window = Fluent:CreateWindow({
     MinimizeKey = Enum.KeyCode.LeftControl
 })
 
--- Mở tab Joiner khi khởi động
-Window:SelectTab(1) -- Tab đầu tiên là Joiner
-
 -- Hệ thống Tạo Tab
 -- Tạo Tab Joiner
 local JoinerTab = Window:AddTab({ Title = "Joiner", Icon = "rbxassetid://90319448802378" })
@@ -134,6 +130,15 @@ local SellAllSection = SettingsTab:AddSection("Sell All Unit")
 -- Settings tab configuration in Settings tab
 local SettingsSection = SettingsTab:AddSection("Script Settings")
 
+-- Chọn tab Joiner mặc định khi mở script
+pcall(function()
+    if JoinerTab and JoinerTab.Select then
+        JoinerTab:Select()
+    elseif Window and Window.SelectTab then
+        Window:SelectTab(JoinerTab)
+    end
+end)
+
 --Tab Joiner Save Settings
 -- Biến lưu trạng thái Halloween Event
 local halloweenEventEnabled = ConfigSystem.CurrentConfig.HalloweenEventEnabled or false
@@ -158,9 +163,26 @@ local webhookEnabled = ConfigSystem.CurrentConfig.WebhookEnabled or false
 local webhookURL = ConfigSystem.CurrentConfig.WebhookURL or ""
 
 --Tab Settings Save Settings
--- Biến lưu trạng thái Script Settings
-local antiAFKEnabled = ConfigSystem.CurrentConfig.AntiAFKEnabled or true
-local autoHideUIEnabled = ConfigSystem.CurrentConfig.AutoHideUIEnabled or false
+-- Biến và hàm Anti AFK
+local antiAFKEnabled = (ConfigSystem.CurrentConfig.AntiAFKEnabled ~= false)
+local antiAFKConn = nil
+local function startAntiAFK()
+    if antiAFKConn then return end
+    local Players = game:GetService("Players")
+    local VirtualUser = game:GetService("VirtualUser")
+    antiAFKConn = Players.LocalPlayer.Idled:Connect(function()
+        pcall(function()
+            VirtualUser:CaptureController()
+            VirtualUser:ClickButton2(Vector2.new(0, 0), workspace.CurrentCamera and workspace.CurrentCamera.CFrame or CFrame.new())
+        end)
+    end)
+end
+local function stopAntiAFK()
+    if antiAFKConn then
+        antiAFKConn:Disconnect()
+        antiAFKConn = nil
+    end
+end
 
 
 -- Hàm thực thi Halloween Event
@@ -805,6 +827,30 @@ WebhookSection:AddButton({
 -- Khởi tạo EndGameUI watcher nếu đã được bật
 if autoRetryEnabled or autoNextEnabled or autoLeaveEnabled or webhookEnabled then
     startEndGameUIWatcher()
+end
+
+-- Toggle Anti AFK trong Settings -> Script Settings
+SettingsSection:AddToggle("AntiAFKToggle", {
+    Title = "Anti AFK",
+    Description = "Ngăn bị kick khi AFK",
+    Default = antiAFKEnabled,
+    Callback = function(enabled)
+        antiAFKEnabled = enabled
+        ConfigSystem.CurrentConfig.AntiAFKEnabled = antiAFKEnabled
+        ConfigSystem.SaveConfig()
+        if antiAFKEnabled then
+            startAntiAFK()
+            print("Anti AFK Enabled")
+        else
+            stopAntiAFK()
+            print("Anti AFK Disabled")
+        end
+    end
+})
+
+-- Khởi động Anti AFK nếu đang bật
+if antiAFKEnabled then
+    startAntiAFK()
 end
 
 -- Macro helpers
@@ -1515,44 +1561,6 @@ InterfaceManager:SetLibrary(Fluent)
 InterfaceManager:SetFolder("HTHubALS")
 SaveManager:SetFolder("HTHubALS/" .. playerName)
 
--- Anti AFK Toggle
-SettingsSection:AddToggle("AntiAFKToggle", {
-    Title = "Anti AFK",
-    Description = "Tự động chống AFK (mặc định bật)",
-    Default = antiAFKEnabled,
-    Callback = function(enabled)
-        antiAFKEnabled = enabled
-        ConfigSystem.CurrentConfig.AntiAFKEnabled = antiAFKEnabled
-        ConfigSystem.SaveConfig()
-        
-        if antiAFKEnabled then
-            print("Anti AFK Enabled - Tự động chống AFK")
-            startAntiAFK()
-        else
-            print("Anti AFK Disabled - Đã tắt chống AFK")
-        end
-    end
-})
-
--- Auto Hide UI Toggle
-SettingsSection:AddToggle("AutoHideUIToggle", {
-    Title = "Auto Hide UI",
-    Description = "Tự động ẩn UI sau khi mở",
-    Default = autoHideUIEnabled,
-    Callback = function(enabled)
-        autoHideUIEnabled = enabled
-        ConfigSystem.CurrentConfig.AutoHideUIEnabled = autoHideUIEnabled
-        ConfigSystem.SaveConfig()
-        
-        if autoHideUIEnabled then
-            print("Auto Hide UI Enabled - UI sẽ tự động ẩn")
-            task.spawn(handleAutoHideUI)
-        else
-            print("Auto Hide UI Disabled - UI sẽ không tự động ẩn")
-        end
-    end
-})
-
 -- Thêm thông tin vào tab Settings
 SettingsTab:AddParagraph({
     Title = "Cấu hình tự động",
@@ -1597,43 +1605,6 @@ end
 
 -- Thiết lập events
 setupSaveEvents()
-
--- Anti AFK System
-local function startAntiAFK()
-    if not antiAFKEnabled then return end
-    
-    task.spawn(function()
-        while antiAFKEnabled do
-            task.wait(30) -- Chờ 30 giây
-            if antiAFKEnabled then
-                -- Gửi input để chống AFK
-                local VirtualInputManager = game:GetService("VirtualInputManager")
-                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
-                task.wait(0.1)
-                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
-                print("Anti AFK: Sent space key")
-            end
-        end
-    end)
-end
-
--- Auto Hide UI System
-local function handleAutoHideUI()
-    if autoHideUIEnabled then
-        -- Tự động ẩn UI sau 3 giây
-        task.wait(3)
-        Window:Minimize()
-        print("Auto Hide UI: UI đã được ẩn tự động")
-    end
-end
-
--- Khởi động Anti AFK nếu được bật
-if antiAFKEnabled then
-    startAntiAFK()
-end
-
--- Xử lý Auto Hide UI
-task.spawn(handleAutoHideUI)
 
 -- Tạo logo để mở lại UI khi đã minimize
 task.spawn(function()
