@@ -40,6 +40,8 @@ ConfigSystem.DefaultConfig = {
     WebhookURL = "",
     -- Anti AFK
     AntiAFKEnabled = true,
+    -- UI Settings
+    AutoHideUIEnabled = false,
 }
 ConfigSystem.CurrentConfig = {}
 
@@ -149,6 +151,9 @@ local delayTime = ConfigSystem.CurrentConfig.DelayTime or 3
 local sellAllEnabled = ConfigSystem.CurrentConfig.SellAllEnabled or false
 local sellAllWave = ConfigSystem.CurrentConfig.SellAllWave or 0
 local waveConnection = nil
+-- Biến Auto Hide UI
+local autoHideUIEnabled = ConfigSystem.CurrentConfig.AutoHideUIEnabled or false
+
 
 --Tab In Game Save Settings
 -- Biến lưu trạng thái Auto Play
@@ -162,7 +167,6 @@ local endGameUIConnection = nil
 local webhookEnabled = ConfigSystem.CurrentConfig.WebhookEnabled or false
 local webhookURL = ConfigSystem.CurrentConfig.WebhookURL or ""
 
---Tab Settings Save Settings
 -- Biến và hàm Anti AFK
 local antiAFKEnabled = (ConfigSystem.CurrentConfig.AntiAFKEnabled ~= false)
 local antiAFKConn = nil
@@ -173,7 +177,8 @@ local function startAntiAFK()
     antiAFKConn = Players.LocalPlayer.Idled:Connect(function()
         pcall(function()
             VirtualUser:CaptureController()
-            VirtualUser:ClickButton2(Vector2.new(0, 0), workspace.CurrentCamera and workspace.CurrentCamera.CFrame or CFrame.new())
+            VirtualUser:ClickButton2(Vector2.new(0, 0),
+            workspace.CurrentCamera and workspace.CurrentCamera.CFrame or CFrame.new())
         end)
     end)
 end
@@ -181,6 +186,15 @@ local function stopAntiAFK()
     if antiAFKConn then
         antiAFKConn:Disconnect()
         antiAFKConn = nil
+    end
+end
+
+--Hàm Auto Hide UI
+local function applyAutoHideUI()
+    if autoHideUIEnabled then
+        pcall(function()
+            game:GetService("VirtualInputManager"):SendKeyEvent(true, Enum.KeyCode.LeftControl, false, game)
+        end)
     end
 end
 
@@ -852,6 +866,27 @@ SettingsSection:AddToggle("AntiAFKToggle", {
 if antiAFKEnabled then
     startAntiAFK()
 end
+
+-- Toggle Auto Hide UI trong Settings -> Script Settings
+SettingsSection:AddToggle("AutoHideUIToggle", {
+    Title = "Auto Hide UI",
+    Description = "Tự động ẩn/hiện UI bằng LeftControl",
+    Default = autoHideUIEnabled,
+    Callback = function(enabled)
+        autoHideUIEnabled = enabled
+        ConfigSystem.CurrentConfig.AutoHideUIEnabled = autoHideUIEnabled
+        ConfigSystem.SaveConfig()
+        if autoHideUIEnabled then
+            applyAutoHideUI()
+            print("Auto Hide UI Enabled")
+        else
+            print("Auto Hide UI Disabled")
+        end
+    end
+})
+
+-- Áp dụng auto hide UI khi khởi động nếu đang bật
+applyAutoHideUI()
 
 -- Macro helpers
 local MacroSystem = {}
