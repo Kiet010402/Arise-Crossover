@@ -419,8 +419,10 @@ local function startEndGameUIWatcher()
                                     if rewardChild:IsA("TextButton") or rewardChild:IsA("Frame") then
                                         local amountLabel = rewardChild:FindFirstChild("Amount")
                                         if amountLabel and amountLabel:IsA("TextLabel") then
-                                            table.insert(rewards, rewardChild.Name .. ": " .. amountLabel.Text)
-                                            print("Found reward:", rewardChild.Name, amountLabel.Text)
+                                            -- Format reward: + Name: Amount (remove x)
+                                            local amount = amountLabel.Text:gsub("x", "") -- Remove x from amount
+                                            table.insert(rewards, "+ " .. rewardChild.Name .. ": " .. amount)
+                                            print("Found reward:", rewardChild.Name, amount)
                                         end
                                     end
                                 end
@@ -469,9 +471,11 @@ local function startEndGameUIWatcher()
                                 matchResultsText = table.concat(matchResults, "\n")
                             end
 
-                            -- Get Time and Wave
+                            -- Get Time, Wave and Result
                             local elapsedTime = "Unknown"
                             local wave = "Unknown"
+                            local result = "Unknown"
+                            local resultColor = 0x00FF00 -- Default green
 
                             local successTime, timeData = pcall(function()
                                 local timeLabel = player.PlayerGui:WaitForChild("EndGameUI"):WaitForChild("BG")
@@ -494,8 +498,26 @@ local function startEndGameUIWatcher()
                                 print("Error getting wave:", waveData)
                             end
 
+                            local successResult, resultData = pcall(function()
+                                local resultLabel = player.PlayerGui:WaitForChild("EndGameUI"):WaitForChild("BG")
+                                    :WaitForChild("Container"):WaitForChild("Stats"):WaitForChild("Result")
+                                result = resultLabel.Text
+                                print("Found result:", result)
+
+                                -- Set color based on result
+                                if string.find(result, "Win") then
+                                    resultColor = 0x00FF00 -- Green for Win
+                                elseif string.find(result, "Defeat") then
+                                    resultColor = 0xFF0000 -- Red for Defeat
+                                end
+                            end)
+
+                            if not successResult then
+                                print("Error getting result:", resultData)
+                            end
+
                             print("Final match results:", matchResultsText)
-                            print("Time:", elapsedTime, "Wave:", wave)
+                            print("Time:", elapsedTime, "Wave:", wave, "Result:", result)
 
                             -- Create webhook payload
                             local payload = http:JSONEncode({
@@ -505,9 +527,9 @@ local function startEndGameUIWatcher()
                                 embeds = {
                                     {
                                         title = "Game Ended!",
-                                        description = string.format("**Player:** %s\n**Level:** %d", playerName,
+                                        description = string.format("**Player:** |%s|\n**Level:** %d", playerName,
                                             playerLevel),
-                                        color = 0x00FF00,
+                                        color = resultColor,
                                         fields = {
                                             {
                                                 name = "Rewards",
@@ -516,8 +538,9 @@ local function startEndGameUIWatcher()
                                             },
                                             {
                                                 name = "Match Result",
-                                                value = string.format("**Time:** %s\n**Wave:** %s\n\n**Match:**\n%s",
-                                                    elapsedTime, wave, matchResultsText),
+                                                value = string.format(
+                                                "**Result:** %s\n**Time:** %s\n**Wave:** %s\n\n**Match:**\n%s",
+                                                    result, elapsedTime, wave, matchResultsText),
                                                 inline = false
                                             }
                                         },
@@ -585,9 +608,9 @@ AutoPlaySection:AddToggle("AutoRetryToggle", {
         ConfigSystem.SaveConfig()
 
         if autoRetryEnabled then
-            print("Auto Retry Enabled - Tự động click Retry")
+            print("Auto Retry Enabled - Auto click Retry")
         else
-            print("Auto Retry Disabled - Đã tắt tự động click Retry")
+            print("Auto Retry Disabled - Disabled auto click Retry")
         end
 
         startEndGameUIWatcher()
@@ -654,7 +677,7 @@ WebhookSection:AddInput("WebhookURLInput", {
 -- Toggle Enable Webhook
 WebhookSection:AddToggle("EnableWebhookToggle", {
     Title = "Enable Webhook",
-    Description = "Gửi thông báo khi game kết thúc",
+    Description = "Send webhook when game ends",
     Default = webhookEnabled,
     Callback = function(enabled)
         webhookEnabled = enabled
@@ -662,9 +685,9 @@ WebhookSection:AddToggle("EnableWebhookToggle", {
         ConfigSystem.SaveConfig()
 
         if webhookEnabled then
-            print("Webhook Enabled - Sẽ gửi thông báo khi game kết thúc")
+            print("Webhook Enabled - Will send webhook when game ends")
         else
-            print("Webhook Disabled - Đã tắt thông báo")
+            print("Webhook Disabled - Disabled webhook")
         end
 
         startEndGameUIWatcher()
@@ -719,7 +742,7 @@ WebhookSection:AddButton({
                             fields = {
                                 {
                                     name = "Status",
-                                    value = "✅ Webhook connection successful!",
+                                    value = "Webhook connection successful!",
                                     inline = false
                                 },
                                 {
@@ -753,16 +776,16 @@ WebhookSection:AddButton({
                 end)
 
                 if webhookSuccess then
-                    print("✅ Test webhook sent successfully! Response:", webhookResponse)
+                    print("Test webhook sent successfully! Response:", webhookResponse)
                     return true
                 else
-                    warn("❌ Failed to send test webhook:", webhookResponse)
+                    warn("Failed to send test webhook:", webhookResponse)
                     return false
                 end
             end)
 
             if not success then
-                warn("❌ Test webhook error:", result)
+                warn("Test webhook error:", result)
             end
         end)
     end
