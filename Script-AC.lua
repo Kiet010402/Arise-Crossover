@@ -38,6 +38,9 @@ ConfigSystem.DefaultConfig = {
     -- Webhook Settings
     WebhookEnabled = false,
     WebhookURL = "",
+    -- Script Settings
+    AntiAFKEnabled = true,
+    AutoHideUIEnabled = false,
 }
 ConfigSystem.CurrentConfig = {}
 
@@ -150,6 +153,11 @@ local endGameUIConnection = nil
 -- Biến lưu trạng thái Webhook
 local webhookEnabled = ConfigSystem.CurrentConfig.WebhookEnabled or false
 local webhookURL = ConfigSystem.CurrentConfig.WebhookURL or ""
+
+--Tab Settings Save Settings
+-- Biến lưu trạng thái Script Settings
+local antiAFKEnabled = ConfigSystem.CurrentConfig.AntiAFKEnabled or true
+local autoHideUIEnabled = ConfigSystem.CurrentConfig.AutoHideUIEnabled or false
 
 
 -- Hàm thực thi Halloween Event
@@ -360,7 +368,7 @@ local function startEndGameUIWatcher()
 
             -- Sử dụng task.spawn để không block UI
             task.spawn(function()
-                task.wait(2)
+                task.wait(3)
 
                 if autoRetryEnabled then
                     print("Auto Retry: Clicking Retry button...")
@@ -368,20 +376,20 @@ local function startEndGameUIWatcher()
                 end
 
                 if autoNextEnabled then
-                    task.wait(3) -- Đợi thêm 3s như trong code gốc
+                    task.wait(5) -- Đợi thêm 5s như trong code gốc
                     print("Auto Next: Clicking Next button...")
                     findAndClickNext()
                 end
 
                 if autoLeaveEnabled then
-                    task.wait(5) -- Đợi 5s như yêu cầu
+                    task.wait(7) -- Đợi 5s như yêu cầu
                     print("Auto Leave: Clicking Leave button...")
                     findAndClickLeave()
                 end
 
                 -- Webhook logic
                 if webhookEnabled and webhookURL ~= "" then
-                    task.wait(1)
+                    task.wait(0.5)
                     print("Webhook: Preparing to send data...")
                     task.spawn(function()
                         local success, result = pcall(function()
@@ -527,7 +535,7 @@ local function startEndGameUIWatcher()
                                 embeds = {
                                     {
                                         title = "Game Ended!",
-                                        description = string.format("**Player:** |%s|\n**Level:** %d", playerName,
+                                        description = string.format("**Player:** ||%s||\n**Level:** %d", playerName,
                                             playerLevel),
                                         color = resultColor,
                                         fields = {
@@ -1504,6 +1512,44 @@ InterfaceManager:SetLibrary(Fluent)
 InterfaceManager:SetFolder("HTHubALS")
 SaveManager:SetFolder("HTHubALS/" .. playerName)
 
+-- Anti AFK Toggle
+SettingsSection:AddToggle("AntiAFKToggle", {
+    Title = "Anti AFK",
+    Description = "Tự động chống AFK (mặc định bật)",
+    Default = antiAFKEnabled,
+    Callback = function(enabled)
+        antiAFKEnabled = enabled
+        ConfigSystem.CurrentConfig.AntiAFKEnabled = antiAFKEnabled
+        ConfigSystem.SaveConfig()
+
+        if antiAFKEnabled then
+            print("Anti AFK Enabled - Tự động chống AFK")
+            startAntiAFK()
+        else
+            print("Anti AFK Disabled - Đã tắt chống AFK")
+        end
+    end
+})
+
+-- Auto Hide UI Toggle
+SettingsSection:AddToggle("AutoHideUIToggle", {
+    Title = "Auto Hide UI",
+    Description = "Tự động ẩn UI sau khi mở",
+    Default = autoHideUIEnabled,
+    Callback = function(enabled)
+        autoHideUIEnabled = enabled
+        ConfigSystem.CurrentConfig.AutoHideUIEnabled = autoHideUIEnabled
+        ConfigSystem.SaveConfig()
+
+        if autoHideUIEnabled then
+            print("Auto Hide UI Enabled - UI sẽ tự động ẩn")
+            task.spawn(handleAutoHideUI)
+        else
+            print("Auto Hide UI Disabled - UI sẽ không tự động ẩn")
+        end
+    end
+})
+
 -- Thêm thông tin vào tab Settings
 SettingsTab:AddParagraph({
     Title = "Cấu hình tự động",
@@ -1548,6 +1594,43 @@ end
 
 -- Thiết lập events
 setupSaveEvents()
+
+-- Anti AFK System
+local function startAntiAFK()
+    if not antiAFKEnabled then return end
+
+    task.spawn(function()
+        while antiAFKEnabled do
+            task.wait(30) -- Chờ 30 giây
+            if antiAFKEnabled then
+                -- Gửi input để chống AFK
+                local VirtualInputManager = game:GetService("VirtualInputManager")
+                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
+                task.wait(0.1)
+                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+                print("Anti AFK: Sent space key")
+            end
+        end
+    end)
+end
+
+-- Auto Hide UI System
+local function handleAutoHideUI()
+    if autoHideUIEnabled then
+        -- Tự động ẩn UI sau 3 giây
+        task.wait(3)
+        Window:Minimize()
+        print("Auto Hide UI: UI đã được ẩn tự động")
+    end
+end
+
+-- Khởi động Anti AFK nếu được bật
+if antiAFKEnabled then
+    startAntiAFK()
+end
+
+-- Xử lý Auto Hide UI
+task.spawn(handleAutoHideUI)
 
 -- Tạo logo để mở lại UI khi đã minimize
 task.spawn(function()
