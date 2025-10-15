@@ -34,8 +34,6 @@ ConfigSystem.DefaultConfig = {
     -- Event Settings
     DelayTime = 3,
     HalloweenEventEnabled = false,
-    -- Cài đặt UI
-    AutoHideUI = false,
 }
 ConfigSystem.CurrentConfig = {}
 
@@ -117,9 +115,6 @@ end)
 -- Biến lưu trạng thái Halloween Event
 local halloweenEventEnabled = ConfigSystem.CurrentConfig.HalloweenEventEnabled or false
 local delayTime = ConfigSystem.CurrentConfig.DelayTime or 3
--- Biến lưu trạng thái Auto Hide UI
-local autoHideUIEnabled = ConfigSystem.CurrentConfig.AutoHideUI or false
-local autoHideUITimer = nil
 
 -- Hàm thực thi Halloween Event
 local function executeHalloweenEvent()
@@ -181,72 +176,6 @@ EventSection:AddToggle("HalloweenEventToggle", {
     end
 })
 
--- Toggle Auto Hide UI
-SettingsSection:AddToggle("AutoHideUIToggle", {
-    Title = "Auto Hide UI",
-    Default = ConfigSystem.CurrentConfig.AutoHideUI or false,
-    Callback = function(Value)
-        autoHideUIEnabled = Value
-        ConfigSystem.CurrentConfig.AutoHideUI = Value
-        ConfigSystem.SaveConfig()
-
-        if Value then
-            print("Auto Hide UI đã được bật, UI sẽ tự động ẩn sau 1 giây")
-
-            -- Tạo timer mới để tự động ẩn UI
-            if autoHideUITimer then
-                autoHideUITimer:Disconnect()
-                autoHideUITimer = nil
-            end
-
-            autoHideUITimer = spawn(function()
-                wait(1) -- Đợi 1 giây
-                -- Sử dụng Window.Visible thay vì isMinimized để kiểm tra
-                if autoHideUIEnabled and Window and Window.Visible then
-                    Window:Minimize()
-                end
-            end)
-        else
-            print("Auto Hide UI đã được tắt")
-
-            -- Hủy timer nếu có
-            if autoHideUITimer then
-                autoHideUITimer:Disconnect()
-                autoHideUITimer = nil
-            end
-        end
-    end
-})
-
--- Tự động ẩn UI nếu tính năng được bật KHI KHỞI ĐỘNG SCRIPT
-spawn(function()
-    print("AutoHideUI startup: Waiting for Window and game load...") -- Debug
-    -- Đợi cho đến khi Window được tạo và game load xong
-    while not Window or not game:IsLoaded() do wait(0.1) end
-    print("AutoHideUI startup: Window and game loaded.") -- Debug
-    wait(1.5)                                            -- Tăng thời gian chờ lên 1.5 giây
-    print("AutoHideUI startup: Checking config...")      -- Debug
-
-    -- Kiểm tra config và thực hiện minimize nếu cần
-    if ConfigSystem.CurrentConfig.AutoHideUI then
-        print("AutoHideUI startup: Config enabled. Attempting to minimize Window...") -- Debug
-        -- Kiểm tra kỹ Window và phương thức Minimize trước khi gọi
-        if Window and type(Window.Minimize) == 'function' then
-            local success, err = pcall(function()
-                Window:Minimize()
-            end)
-            if success then
-                print("AutoHideUI startup: Window:Minimize() called successfully.") -- Debug
-            else
-                print("AutoHideUI startup: Error calling Window:Minimize():", err)  -- Debug
-            end
-        else
-            print("AutoHideUI startup: Error - Window object or Window.Minimize method not available or not a function.") -- Debug
-        end
-    else
-        print("AutoHideUI startup: Config disabled.") -- Debug
-    end
-end)
 
 -- Integration with SaveManager
 SaveManager:SetLibrary(Fluent)
