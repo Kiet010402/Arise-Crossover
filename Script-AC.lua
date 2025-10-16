@@ -414,26 +414,8 @@ local function startEndGameUIWatcher()
 
             -- Sử dụng task.spawn để không block UI
             task.spawn(function()
-                task.wait(3)
-
-                if autoRetryEnabled then
-                    print("Auto Retry: Clicking Retry button...")
-                    findAndClickRetry()
-                end
-
-                if autoNextEnabled then
-                    task.wait(5) -- Đợi thêm 5s như trong code gốc
-                    print("Auto Next: Clicking Next button...")
-                    findAndClickNext()
-                end
-
-                if autoLeaveEnabled then
-                    task.wait(7) -- Đợi 5s như yêu cầu
-                    print("Auto Leave: Clicking Leave button...")
-                    findAndClickLeave()
-                end
-
-                -- Webhook logic
+                task.wait(2)
+                -- Webhook logic FIRST
                 if webhookEnabled and webhookURL ~= "" then
                     task.wait(1)
                     print("Webhook: Preparing to send data...")
@@ -637,6 +619,24 @@ local function startEndGameUIWatcher()
                     end)
                 else
                     print("Webhook not enabled or URL empty. Enabled:", webhookEnabled, "URL:", webhookURL)
+                end
+
+                if autoRetryEnabled then
+                    task.wait(3) -- Đợi 5s như yêu cầu
+                    print("Auto Retry: Clicking Retry button...")
+                    findAndClickRetry()
+                end
+
+                if autoNextEnabled then
+                    task.wait(5) -- Đợi thêm 5s như trong code gốc
+                    print("Auto Next: Clicking Next button...")
+                    findAndClickNext()
+                end
+
+                if autoLeaveEnabled then
+                    task.wait(7) -- Đợi 5s như yêu cầu
+                    print("Auto Leave: Clicking Leave button...")
+                    findAndClickLeave()
                 end
             end)
         end
