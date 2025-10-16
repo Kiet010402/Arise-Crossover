@@ -103,15 +103,6 @@ local Window = Fluent:CreateWindow({
     MinimizeKey = Enum.KeyCode.LeftControl
 })
 
--- Focus vào tab đầu tiên khi mở script
-pcall(function()
-    if Window and Window.SelectTab then
-        Window:SelectTab(1)
-    elseif Window and Window._tabs and Window._tabs[1] and Window._tabs[1].Select then
-        Window._tabs[1]:Select()
-    end
-end)
-
 -- Hệ thống Tạo Tab
 -- Tạo Tab Joiner
 local JoinerTab = Window:AddTab({ Title = "Joiner", Icon = "rbxassetid://90319448802378" })
@@ -123,6 +114,15 @@ local InGameTab = Window:AddTab({ Title = "In Game", Icon = "rbxassetid://903194
 local WebhookTab = Window:AddTab({ Title = "Webhook", Icon = "rbxassetid://90319448802378" })
 -- Tạo Tab Settings
 local SettingsTab = Window:AddTab({ Title = "Settings", Icon = "rbxassetid://90319448802378" })
+
+-- tự động chọn JoinerTab khi mở script
+pcall(function()
+    if JoinerTab and JoinerTab.Select then
+        JoinerTab:Select()
+    elseif Window and Window.SelectTab then
+        Window:SelectTab(1)
+    end
+end)
 
 -- Tab Joiner
 -- Section Event trong tab Joiner
