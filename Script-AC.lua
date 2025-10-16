@@ -39,6 +39,7 @@ ConfigSystem.DefaultConfig = {
     WebhookEnabled = false,
     WebhookURL = "",
     AntiAFKEnabled = false,
+    AutoHideUIEnabled = false,
 }
 ConfigSystem.CurrentConfig = {}
 
@@ -163,7 +164,25 @@ local webhookURL = ConfigSystem.CurrentConfig.WebhookURL or ""
 -- Biến lưu trạng thái Anti AFK
 local antiAFKEnabled = ConfigSystem.CurrentConfig.AntiAFKEnabled or false
 local antiAFKConn = nil
+-- Biến lưu trạng thái Auto Hide UI
+local autoHideUIEnabled = ConfigSystem.CurrentConfig.AutoHideUIEnabled or false
 
+
+-- Hàm tự động ẩn UI sau 3 giây khi bật
+local function autoHideUI()
+    if not Window then return end
+    task.spawn(function()
+        print("Auto Hide UI: Sẽ tự động ẩn sau 3 giây...")
+        task.wait(3)
+        if Window.Minimize then
+            Window:Minimize()
+            print("UI đã được ẩn!")
+        elseif Window.Visible ~= nil then
+            Window.Visible = false
+            print("UI đã bị ẩn thông qua Visible!")
+        end
+    end)
+end
 
 --Hàm Anti AFK
 local function startAntiAFK()
@@ -1554,6 +1573,23 @@ SettingsSection:AddToggle("AntiAFKToggle", {
 if antiAFKEnabled then
     startAntiAFK()
 end
+
+-- Thêm Toggle Auto Hide UI vào Settings tab
+SettingsSection:AddToggle("AutoHideUIToggle", {
+    Title = "Auto Hide UI",
+    Description = "Tự động ẩn UI sau 3 giây khi bật",
+    Default = autoHideUIEnabled,
+    Callback = function(enabled)
+        autoHideUIEnabled = enabled
+        ConfigSystem.CurrentConfig.AutoHideUIEnabled = autoHideUIEnabled
+        ConfigSystem.SaveConfig()
+        if autoHideUIEnabled then
+            autoHideUI()
+        else
+            print("Auto Hide UI đã tắt")
+        end
+    end
+})
 
 -- Integration with SaveManager
 SaveManager:SetLibrary(Fluent)
