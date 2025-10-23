@@ -1,19 +1,8 @@
--- Chỉ chạy script nếu đúng GameID
-do
-    local ok, gameId = pcall(function()
-        return game.GameId
-    end)
-    if not ok or tonumber(gameId) ~= 4509896324 then
-        return
-    end
-end
 -- Load UI Library với error handling
 local success, err = pcall(function()
     Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
-    SaveManager = loadstring(game:HttpGet(
-        "https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
-    InterfaceManager = loadstring(game:HttpGet(
-        "https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
+    SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
+    InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
 end)
 
 if not success then
@@ -31,10 +20,9 @@ end
 local ConfigSystem = {}
 ConfigSystem.FileName = "HTHubAllStar_" .. game:GetService("Players").LocalPlayer.Name .. ".json"
 ConfigSystem.DefaultConfig = {
-    -- Event Settings
-    DelayTime = 3,
-    HalloweenEventEnabled = false,
-    AutoHideUIEnabled = false,
+    -- Webhook Settings
+    WebhookEnabled = false,
+    WebhookUrl = "",
 }
 ConfigSystem.CurrentConfig = {}
 
@@ -58,7 +46,7 @@ ConfigSystem.LoadConfig = function()
         end
         return nil
     end)
-
+    
     if success and content then
         local data = game:GetService("HttpService"):JSONDecode(content)
         ConfigSystem.CurrentConfig = data
@@ -72,6 +60,10 @@ end
 
 -- Tải cấu hình khi khởi động
 ConfigSystem.LoadConfig()
+
+-- Biến lưu trạng thái của tab Webhook
+local webhookEnabled = ConfigSystem.CurrentConfig.WebhookEnabled or false
+local webhookUrl = ConfigSystem.CurrentConfig.WebhookUrl or ""
 
 
 -- Lấy tên người chơi
@@ -89,127 +81,114 @@ local Window = Fluent:CreateWindow({
 })
 
 -- Hệ thống Tạo Tab
--- Tạo Tab Joiner
-local JoinerTab = Window:AddTab({ Title = "Joiner", Icon = "rbxassetid://90319448802378" })
 
+-- Tạo Tab Webhook
+local WebhookTab = Window:AddTab({ Title = "Webhook", Icon = "rbxassetid://13311802307" })
 -- Tạo Tab Settings
 local SettingsTab = Window:AddTab({ Title = "Settings", Icon = "rbxassetid://13311798537" })
 
--- Tab Joiner
--- Section Event trong tab Joiner
-local EventSection = JoinerTab:AddSection("Event")
--- Tab Settings
--- Settings tab configuration
-local SettingsSection = SettingsTab:AddSection("Script Settings")
--- Thêm section UI Settings vào tab Settings
-local SettingsSection = SettingsTab:AddSection("UI Settings")
+-- Tab Webhook
+-- Section Webhook Settings trong tab Webhook
+local WebhookSection = WebhookTab:AddSection("Webhook Settings")
 
--- Chọn tab Joiner mặc định khi mở script
-pcall(function()
-    if JoinerTab and JoinerTab.Select then
-        JoinerTab:Select()
-    elseif Window and Window.SelectTab then
-        Window:SelectTab(JoinerTab)
+-- Thêm Input để nhập Webhook URL
+WebhookSection:AddInput("WebhookURLInput", {
+    Title = "Webhook URL",
+    Default = webhookUrl,
+    Placeholder = "Dán link webhook Discord của bạn",
+    Callback = function(val)
+        webhookUrl = tostring(val or "")
+        ConfigSystem.CurrentConfig.WebhookUrl = webhookUrl
+        ConfigSystem.SaveConfig()
+        print("Webhook URL set:", webhookUrl)
+    end
+})
+
+-- Thêm Toggle Enable Webhook
+WebhookSection:AddToggle("EnableWebhookToggle", {
+    Title = "Enable Webhook",
+    Description = "Gửi webhook khi có kết quả game",
+    Default = webhookEnabled,
+    Callback = function(enabled)
+        webhookEnabled = enabled
+        ConfigSystem.CurrentConfig.WebhookEnabled = webhookEnabled
+        ConfigSystem.SaveConfig()
+        if webhookEnabled then
+            print("Webhook enabled")
+        else
+            print("Webhook disabled")
+        end
+    end
+})
+
+-- Hàm gửi webhook về Discord
+local function sendWebhook()
+    if not webhookEnabled or webhookUrl == "" then return end
+    local player = game:GetService("Players").LocalPlayer
+    local gems = 0
+    local pumpkins = 0
+    local name = player.Name
+    pcall(function()
+        gems = player._stats.gem_amount.Value or 0
+    end)
+    pcall(function()
+        pumpkins = player._stats._resourcePumkinToken.Value or 0
+    end)
+    local data = {
+        content = string.format("Player: ||%s||\nGem: %s\nPumpkins: %s", name, gems, pumpkins)
+    }
+    local http = game:GetService("HttpService")
+    local payload = http:JSONEncode(data)
+    print("Sending webhook! Data:", data)
+    pcall(function()
+        request({
+            Url = webhookUrl,
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json"
+            },
+            Body = payload
+        })
+    end)
+end
+
+-- Watcher ResultsUI để gửi webhook khi Enabled = true
+local lastResultSent = false
+local function watchResultsUI()
+    local player = game:GetService("Players").LocalPlayer
+    local gui = player.PlayerGui:FindFirstChild("ResultsUI")
+    if not gui then return end
+    if gui:GetAttribute("_hooked") then return end
+    gui:SetAttribute("_hooked", true)
+    gui:GetPropertyChangedSignal("Enabled"):Connect(function()
+        if gui.Enabled and webhookEnabled and not lastResultSent then
+            sendWebhook()
+            lastResultSent = true
+        elseif not gui.Enabled then
+            lastResultSent = false
+        end
+    end)
+    if gui.Enabled and webhookEnabled and not lastResultSent then
+        sendWebhook()
+        lastResultSent = true
+    end
+end
+
+-- Tự động theo dõi khi có ResultsUI
+local player = game:GetService("Players").LocalPlayer
+local pg = player:WaitForChild("PlayerGui")
+pg.ChildAdded:Connect(function(child)
+    if child.Name == "ResultsUI" then
+        watchResultsUI()
     end
 end)
-
--- Biến lưu trạng thái Halloween Event
-local halloweenEventEnabled = ConfigSystem.CurrentConfig.HalloweenEventEnabled or false
-local delayTime = ConfigSystem.CurrentConfig.DelayTime or 3
--- Biến lưu trạng thái Auto Hide UI
-local autoHideUIEnabled = ConfigSystem.CurrentConfig.AutoHideUIEnabled or false
-
--- Hàm tự động ẩn UI sau 3 giây khi bật
-local function autoHideUI()
-    if not Window then return end
-    task.spawn(function()
-        print("Auto Hide UI: Sẽ tự động ẩn sau 3 giây...")
-        task.wait(3)
-        if Window.Minimize then
-            Window:Minimize()
-            print("UI đã được ẩn!")
-        elseif Window.Visible ~= nil then
-            Window.Visible = false
-            print("UI đã bị ẩn thông qua Visible!")
-        end
-    end)
-end
--- Hàm thực thi Halloween Event
-local function executeHalloweenEvent()
-    if not halloweenEventEnabled then return end
-
-    local success, err = pcall(function()
-        -- Bước 1: Enter Halloween Event
-        print("Bước 1: Entering Halloween Event...")
-        game:GetService("ReplicatedStorage").Events.Hallowen2025.Enter:FireServer()
-
-        -- Bước 2: Đợi delay time rồi Start
-        task.wait(delayTime)
-
-        if halloweenEventEnabled then -- Kiểm tra lại sau khi đợi
-            print("Bước 2: Starting Halloween Event...")
-            game:GetService("ReplicatedStorage").Events.Hallowen2025.Start:FireServer()
-            print("Halloween Event executed successfully!")
-        end
-    end)
-
-    if not success then
-        warn("Lỗi Halloween Event:", err)
-    end
+if pg:FindFirstChild("ResultsUI") then
+    watchResultsUI()
 end
 
--- Input Delay Time
-EventSection:AddInput("DelayTimeInput", {
-    Title = "Delay Time",
-    Default = tostring(delayTime),
-    Placeholder = "(1-60s)",
-    Callback = function(val)
-        local num = tonumber(val)
-        if num and num >= 1 and num <= 60 then
-            delayTime = num
-            ConfigSystem.CurrentConfig.DelayTime = delayTime
-            ConfigSystem.SaveConfig()
-            print("Delay time set to:", delayTime, "seconds")
-        else
-            warn("Delay time must be between 1-60 seconds")
-        end
-    end
-})
-
--- Toggle Join Halloween Event
-EventSection:AddToggle("HalloweenEventToggle", {
-    Title = "Join Halloween Event",
-    Description = "Auto Join Halloween",
-    Default = halloweenEventEnabled,
-    Callback = function(enabled)
-        halloweenEventEnabled = enabled
-        ConfigSystem.CurrentConfig.HalloweenEventEnabled = halloweenEventEnabled
-        ConfigSystem.SaveConfig()
-        if halloweenEventEnabled then
-            print("Halloween Event Enabled - Auto Join Halloween 2025")
-            executeHalloweenEvent()
-        else
-            print("Halloween Event Disabled - Auto Join Halloween 2025")
-        end
-    end
-})
-
--- Thêm Toggle Auto Hide UI vào Settings tab
-SettingsSection:AddToggle("AutoHideUIToggle", {
-    Title = "Auto Hide UI",
-    Description = "Tự động ẩn UI sau 3 giây khi bật",
-    Default = autoHideUIEnabled,
-    Callback = function(enabled)
-        autoHideUIEnabled = enabled
-        ConfigSystem.CurrentConfig.AutoHideUIEnabled = autoHideUIEnabled
-        ConfigSystem.SaveConfig()
-        if autoHideUIEnabled then
-            autoHideUI()
-        else
-            print("Auto Hide UI đã tắt")
-        end
-    end
-})
+-- Tab Settings
+-- Section Script Settings trong tab Settings
+local SettingsSection = SettingsTab:AddSection("Script Settings")
 
 -- Integration with SaveManager
 SaveManager:SetLibrary(Fluent)
@@ -246,7 +225,7 @@ AutoSaveConfig()
 
 -- Thêm event listener để lưu ngay khi thay đổi giá trị
 local function setupSaveEvents()
-    for _, tab in pairs({ MainTab, SettingsTab }) do
+    for _, tab in pairs({MainTab, SettingsTab}) do
         if tab and tab._components then
             for _, element in pairs(tab._components) do
                 if element and element.OnChanged then
@@ -267,12 +246,12 @@ setupSaveEvents()
 -- Tạo logo để mở lại UI khi đã minimize
 task.spawn(function()
     local success, errorMsg = pcall(function()
-        if not getgenv().LoadedMobileUI == true then
+        if not getgenv().LoadedMobileUI == true then 
             getgenv().LoadedMobileUI = true
             local OpenUI = Instance.new("ScreenGui")
             local ImageButton = Instance.new("ImageButton")
             local UICorner = Instance.new("UICorner")
-
+            
             -- Kiểm tra môi trường
             if syn and syn.protect_gui then
                 syn.protect_gui(OpenUI)
@@ -282,29 +261,29 @@ task.spawn(function()
             else
                 OpenUI.Parent = game:GetService("CoreGui")
             end
-
+            
             OpenUI.Name = "OpenUI"
             OpenUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-
+            
             ImageButton.Parent = OpenUI
-            ImageButton.BackgroundColor3 = Color3.fromRGB(105, 105, 105)
+            ImageButton.BackgroundColor3 = Color3.fromRGB(105,105,105)
             ImageButton.BackgroundTransparency = 0.8
-            ImageButton.Position = UDim2.new(0.9, 0, 0.1, 0)
-            ImageButton.Size = UDim2.new(0, 50, 0, 50)
+            ImageButton.Position = UDim2.new(0.9,0,0.1,0)
+            ImageButton.Size = UDim2.new(0,50,0,50)
             ImageButton.Image = "rbxassetid://13099788281" -- Logo HT Hub
             ImageButton.Draggable = true
             ImageButton.Transparency = 0.2
-
-            UICorner.CornerRadius = UDim.new(0, 200)
+            
+            UICorner.CornerRadius = UDim.new(0,200)
             UICorner.Parent = ImageButton
-
+            
             -- Khi click vào logo sẽ mở lại UI
             ImageButton.MouseButton1Click:Connect(function()
-                game:GetService("VirtualInputManager"):SendKeyEvent(true, Enum.KeyCode.LeftControl, false, game)
+                game:GetService("VirtualInputManager"):SendKeyEvent(true,Enum.KeyCode.LeftControl,false,game)
             end)
         end
     end)
-
+    
     if not success then
         warn("Lỗi khi tạo nút Logo UI: " .. tostring(errorMsg))
     end
