@@ -582,7 +582,7 @@ local function tweenToMineTarget(targetPart)
 
     -- Tính thời gian tween dựa trên khoảng cách XZ (chậm hơn vì chỉ di chuyển X và Z, không bị anti-tp)
     -- Tốc độ: khoảng 8 studs/s để an toàn
-    local time = math.clamp(distanceToTarget / 8, 3, 10)
+    local time = math.clamp(distanceToTarget / 8, 3, 10) --Tween của Auto Farm Rock
 
     -- Hướng về rock (nhưng vẫn ở trên trời)
     local lookAtCFrame = CFrame.new(targetPos, targetPart.Position)
@@ -1208,7 +1208,7 @@ local function tweenToEnemyInSky(enemyModel)
 
     -- Tính thời gian tween dựa trên khoảng cách XZ (chậm hơn vì chỉ di chuyển X và Z, không bị anti-tp)
     -- Tốc độ: khoảng 8 studs/s để an toàn
-    local time = math.clamp(distanceToTarget / 8, 3, 10)
+    local time = math.clamp(distanceToTarget / 8, 3, 10) --Tween của Auto Farm Enemy
 
     -- Hướng về enemy (nhưng vẫn ở trên trời)
     local lookAtCFrame = CFrame.new(targetPos, enemyRootPart.Position)
@@ -1281,6 +1281,14 @@ local function swingWeaponUntilEnemyDead(enemyModel, typeName)
     hrp.CFrame = CFrame.new(targetPos, lookAtPos)
     isFlyingInSky = false                                           -- Đánh dấu đã xuống đánh quái
 
+    -- Chuyển camera sang View Player của enemy
+    local camera = workspace.CurrentCamera
+    local originalCameraSubject = camera.CameraSubject
+    local enemyHumanoid = enemyModel:FindFirstChildOfClass("Humanoid")
+    if enemyHumanoid then
+        camera.CameraSubject = enemyHumanoid
+    end
+
     -- Tắt AutoRotate để tránh game tự động xoay nhân vật
     local originalAutoRotate = hrp.AssemblyAngularVelocity
     hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
@@ -1308,6 +1316,11 @@ local function swingWeaponUntilEnemyDead(enemyModel, typeName)
             or isAutoBuyAndUseActive then
             if keepPositionConnection then
                 keepPositionConnection:Disconnect()
+            end
+            -- Khôi phục camera về player khi dừng
+            local camera = workspace.CurrentCamera
+            if camera and originalCameraSubject then
+                camera.CameraSubject = originalCameraSubject
             end
             return
         end
@@ -1362,6 +1375,12 @@ local function swingWeaponUntilEnemyDead(enemyModel, typeName)
     -- Khôi phục AutoRotate
     if hrp and hrp.Parent then
         hrp.AssemblyAngularVelocity = originalAutoRotate
+    end
+
+    -- Khôi phục camera về player
+    local camera = workspace.CurrentCamera
+    if camera and originalCameraSubject then
+        camera.CameraSubject = originalCameraSubject
     end
 
     -- Sau khi enemy chết, bay lên trời lại ngay lập tức
@@ -1623,7 +1642,7 @@ local function tweenToMaria()
     end
     local distance = (hrp.Position - targetPos).Magnitude
     -- Tween chậm hơn để hạn chế dịch chuyển gấp
-    local time = math.clamp(distance / 5, 3, 12)
+    local time = math.clamp(distance / 5, 3, 12) --Tween của Auto Buy And Use Potion
 
     -- Hướng nhìn giữ nguyên hướng hiện tại theo trục Y
     local lookAtCFrame = CFrame.new(targetPos, targetPos + (hrp.CFrame.LookVector * Vector3.new(1, 0, 1)))
