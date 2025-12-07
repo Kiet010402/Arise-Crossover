@@ -581,8 +581,8 @@ local function tweenToMineTarget(targetPart)
         .Magnitude
 
     -- Tính thời gian tween dựa trên khoảng cách XZ (chậm hơn vì chỉ di chuyển X và Z, không bị anti-tp)
-    -- Tốc độ: khoảng 10 studs/s để an toàn
-    local time = math.clamp(distanceToTarget / 10, 1, 8)
+    -- Tốc độ: khoảng 8 studs/s để an toàn
+    local time = math.clamp(distanceToTarget / 8, 3, 10)
 
     -- Hướng về rock (nhưng vẫn ở trên trời)
     local lookAtCFrame = CFrame.new(targetPos, targetPart.Position)
@@ -1208,7 +1208,7 @@ local function tweenToEnemyInSky(enemyModel)
 
     -- Tính thời gian tween dựa trên khoảng cách XZ (chậm hơn vì chỉ di chuyển X và Z, không bị anti-tp)
     -- Tốc độ: khoảng 8 studs/s để an toàn
-    local time = math.clamp(distanceToTarget / 10, 1, 8)
+    local time = math.clamp(distanceToTarget / 8, 3, 10)
 
     -- Hướng về enemy (nhưng vẫn ở trên trời)
     local lookAtCFrame = CFrame.new(targetPos, enemyRootPart.Position)
@@ -1623,7 +1623,7 @@ local function tweenToMaria()
     end
     local distance = (hrp.Position - targetPos).Magnitude
     -- Tween chậm hơn để hạn chế dịch chuyển gấp
-    local time = math.clamp(distance / 8, 1.2, 12)
+    local time = math.clamp(distance / 5, 3, 12)
 
     -- Hướng nhìn giữ nguyên hướng hiện tại theo trục Y
     local lookAtCFrame = CFrame.new(targetPos, targetPos + (hrp.CFrame.LookVector * Vector3.new(1, 0, 1)))
