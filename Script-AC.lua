@@ -178,7 +178,7 @@ local espEnemyEnabled = ConfigSystem.CurrentConfig.ESPEnemyEnabled
 if type(espEnemyEnabled) ~= "boolean" then
     espEnemyEnabled = ConfigSystem.DefaultConfig.ESPEnemyEnabled
 end
-local rockESPGuis = {} -- Lưu các BillboardGui của rock ESP
+local rockESPGuis = {}  -- Lưu các BillboardGui của rock ESP
 local enemyESPGuis = {} -- Lưu các BillboardGui của enemy ESP
 
 -- Độ cao trên trời để bay (Y coordinate)
@@ -578,7 +578,7 @@ local function tweenToMineTarget(targetPart)
     local targetPos = Vector3.new(rockPos.X, SKY_HEIGHT, rockPos.Z)
     local currentPos = hrp.Position
     local distanceToTarget = (Vector3.new(currentPos.X, 0, currentPos.Z) - Vector3.new(targetPos.X, 0, targetPos.Z))
-    .Magnitude
+        .Magnitude
 
     -- Tính thời gian tween dựa trên khoảng cách XZ (chậm hơn vì chỉ di chuyển X và Z, không bị anti-tp)
     -- Tốc độ: khoảng 10 studs/s để an toàn
@@ -902,7 +902,7 @@ task.spawn(function()
                                 local rockPos = part.Position
                                 -- Tính khoảng cách XZ (bỏ qua Y)
                                 local dist = (Vector3.new(hrpPos.X, 0, hrpPos.Z) - Vector3.new(rockPos.X, 0, rockPos.Z))
-                                .Magnitude
+                                    .Magnitude
                                 if dist < closestDist then
                                     closestDist = dist
                                     closestTarget = part
@@ -2496,6 +2496,18 @@ local function updateRockESP()
         return
     end
 
+    -- Nếu chưa chọn rock type nào thì không hiển thị ESP
+    if not selectedRockType or #selectedRockType == 0 then
+        -- Xóa tất cả ESP
+        for rockPart, gui in pairs(rockESPGuis) do
+            if gui and gui.Parent then
+                gui:Destroy()
+            end
+        end
+        rockESPGuis = {}
+        return
+    end
+
     local player = Players.LocalPlayer
     local character = player.Character
     if not character then
@@ -2507,7 +2519,18 @@ local function updateRockESP()
         return
     end
 
-    -- Tìm tất cả rock trong workspace
+    -- Tạo set các rock type đã chọn để check nhanh
+    local selectedRockSet = {}
+    local hasAll = false
+    for _, typeName in ipairs(selectedRockType) do
+        if typeName == "All" then
+            hasAll = true
+            break
+        end
+        selectedRockSet[typeName] = true
+    end
+
+    -- Tìm tất cả rock trong workspace, chỉ lấy những rock đã chọn
     local rocksRoot = workspace:FindFirstChild("Rocks")
     if not rocksRoot then
         return
@@ -2518,12 +2541,15 @@ local function updateRockESP()
         if inst:IsA("BasePart") and inst.Parent then
             local model = inst:FindFirstAncestorWhichIsA("Model")
             if model and model.Name ~= "" then
-                currentRocks[inst] = model.Name
+                -- Chỉ thêm rock nếu đã chọn trong dropdown
+                if hasAll or selectedRockSet[model.Name] then
+                    currentRocks[inst] = model.Name
+                end
             end
         end
     end
 
-    -- Xóa ESP của rock không còn tồn tại
+    -- Xóa ESP của rock không còn tồn tại hoặc không được chọn
     for rockPart, gui in pairs(rockESPGuis) do
         if not currentRocks[rockPart] or not rockPart.Parent then
             if gui and gui.Parent then
@@ -2533,7 +2559,7 @@ local function updateRockESP()
         end
     end
 
-    -- Tạo hoặc update ESP cho rock hiện tại
+    -- Tạo hoặc update ESP cho rock hiện tại (chỉ những rock đã chọn)
     for rockPart, rockName in pairs(currentRocks) do
         local distance = (hrp.Position - rockPart.Position).Magnitude
         local espGui = rockESPGuis[rockPart]
@@ -2556,6 +2582,18 @@ local function updateEnemyESP()
         return
     end
 
+    -- Nếu chưa chọn enemy type nào thì không hiển thị ESP
+    if not selectedEnemyType or #selectedEnemyType == 0 then
+        -- Xóa tất cả ESP
+        for enemyModel, gui in pairs(enemyESPGuis) do
+            if gui and gui.Parent then
+                gui:Destroy()
+            end
+        end
+        enemyESPGuis = {}
+        return
+    end
+
     local player = Players.LocalPlayer
     local character = player.Character
     if not character then
@@ -2567,7 +2605,18 @@ local function updateEnemyESP()
         return
     end
 
-    -- Tìm tất cả enemy trong workspace.Living
+    -- Tạo set các enemy type đã chọn để check nhanh
+    local selectedEnemySet = {}
+    local hasAll = false
+    for _, typeName in ipairs(selectedEnemyType) do
+        if typeName == "All" then
+            hasAll = true
+            break
+        end
+        selectedEnemySet[typeName] = true
+    end
+
+    -- Tìm tất cả enemy trong workspace.Living, chỉ lấy những enemy đã chọn
     local livingRoot = workspace:FindFirstChild("Living")
     if not livingRoot then
         return
@@ -2582,13 +2631,16 @@ local function updateEnemyESP()
                     child:FindFirstChildWhichIsA("BasePart", true)
                 if rootPart then
                     local enemyName = extractEnemyTypeName(child.Name) or child.Name
-                    currentEnemies[child] = { rootPart = rootPart, name = enemyName }
+                    -- Chỉ thêm enemy nếu đã chọn trong dropdown
+                    if hasAll or selectedEnemySet[enemyName] then
+                        currentEnemies[child] = { rootPart = rootPart, name = enemyName }
+                    end
                 end
             end
         end
     end
 
-    -- Xóa ESP của enemy không còn tồn tại hoặc đã chết
+    -- Xóa ESP của enemy không còn tồn tại, đã chết hoặc không được chọn
     for enemyModel, gui in pairs(enemyESPGuis) do
         if not currentEnemies[enemyModel] or not enemyModel.Parent or isEnemyDead(enemyModel) then
             if gui and gui.Parent then
@@ -2598,7 +2650,7 @@ local function updateEnemyESP()
         end
     end
 
-    -- Tạo hoặc update ESP cho enemy hiện tại
+    -- Tạo hoặc update ESP cho enemy hiện tại (chỉ những enemy đã chọn)
     for enemyModel, enemyData in pairs(currentEnemies) do
         local rootPart = enemyData.rootPart
         local enemyName = enemyData.name
@@ -2672,7 +2724,7 @@ sections.SettingsMisc:Toggle({
         ConfigSystem.CurrentConfig.ESPRockEnabled = value
         ConfigSystem.SaveConfig()
         notify("ESP Rock", (value and "Enabled" or "Disabled") .. " ESP Rock", 3)
-        
+
         -- Nếu tắt, xóa tất cả ESP
         if not value then
             for rockPart, gui in pairs(rockESPGuis) do
@@ -2693,7 +2745,7 @@ sections.SettingsMisc:Toggle({
         ConfigSystem.CurrentConfig.ESPEnemyEnabled = value
         ConfigSystem.SaveConfig()
         notify("ESP Enemy", (value and "Enabled" or "Disabled") .. " ESP Enemy", 3)
-        
+
         -- Nếu tắt, xóa tất cả ESP
         if not value then
             for enemyModel, gui in pairs(enemyESPGuis) do
