@@ -42,7 +42,7 @@ ConfigSystem.DefaultConfig = {
     SelectedDistance = 6,
     AutoFarmEnemyEnabled = false,
     SelectedMineDistance = 6,
-    SelectedPotionName = nil,
+    SelectedPotionName = {},
     AutoBuyAndUsePotionEnabled = false,
     SelectedItemName = nil,
     AutoSellItemEnabled = false,
@@ -176,8 +176,11 @@ local skyPositionConnection = nil -- Connection để giữ Y cố định khi b
 local potionNames = {}
 local potionDropdown = nil
 local selectedPotionName = ConfigSystem.CurrentConfig.SelectedPotionName
-if selectedPotionName ~= nil and type(selectedPotionName) ~= "string" then
-    selectedPotionName = nil
+if type(selectedPotionName) == "string" then
+    -- Convert string cũ thành array
+    selectedPotionName = { selectedPotionName }
+elseif type(selectedPotionName) ~= "table" then
+    selectedPotionName = {}
 end
 local autoBuyAndUsePotionEnabled = ConfigSystem.CurrentConfig.AutoBuyAndUsePotionEnabled
 if type(autoBuyAndUsePotionEnabled) ~= "boolean" then
@@ -1654,26 +1657,27 @@ potionNames = scanPotionModels()
 
 potionDropdown = sections.ShopPotion:Dropdown({
     Name = "Select Potion",
-    Multi = false,
+    Multi = true,
     Required = false,
     Options = potionNames,
     Default = selectedPotionName,
     Callback = function(value)
         if typeof(value) == "table" then
+            selectedPotionName = {}
             for name, state in pairs(value) do
                 if state then
-                    value = name
-                    break
+                    table.insert(selectedPotionName, name)
                 end
             end
+        else
+            selectedPotionName = {}
         end
 
-        if not value or value == "" then
-            selectedPotionName = nil
-            ConfigSystem.CurrentConfig.SelectedPotionName = nil
+        if not selectedPotionName or #selectedPotionName == 0 then
+            selectedPotionName = {}
+            ConfigSystem.CurrentConfig.SelectedPotionName = {}
         else
-            selectedPotionName = value
-            ConfigSystem.CurrentConfig.SelectedPotionName = value
+            ConfigSystem.CurrentConfig.SelectedPotionName = selectedPotionName
         end
 
         ConfigSystem.SaveConfig()
@@ -1681,7 +1685,7 @@ potionDropdown = sections.ShopPotion:Dropdown({
 }, "SelectPotionDropdown")
 
 -- Đảm bảo hiển thị lại lựa chọn potion đã lưu khi mở script
-if selectedPotionName and potionDropdown and potionDropdown.UpdateSelection then
+if selectedPotionName and #selectedPotionName > 0 and potionDropdown and potionDropdown.UpdateSelection then
     potionDropdown:UpdateSelection(selectedPotionName)
 end
 
@@ -1697,7 +1701,7 @@ sections.ShopPotion:Button({
             if potionDropdown.InsertOptions then
                 potionDropdown:InsertOptions(list)
             end
-            if selectedPotionName and potionDropdown.UpdateSelection then
+            if selectedPotionName and #selectedPotionName > 0 and potionDropdown.UpdateSelection then
                 potionDropdown:UpdateSelection(selectedPotionName)
             end
         end
@@ -1714,7 +1718,7 @@ sections.ShopPotion:Toggle({
         ConfigSystem.CurrentConfig.AutoBuyAndUsePotionEnabled = value
         ConfigSystem.SaveConfig()
         if value then
-            if not selectedPotionName then
+            if not selectedPotionName or #selectedPotionName == 0 then
                 notify("Shop Potion", "Chưa chọn potion!", 3)
             end
         end
@@ -1789,7 +1793,7 @@ task.spawn(function()
         task.wait(0.5)
 
         -- Nếu toggle tắt hoặc chưa chọn potion thì đảm bảo flag cũng tắt và bỏ qua
-        if not autoBuyAndUsePotionEnabled or not selectedPotionName then
+        if not autoBuyAndUsePotionEnabled or not selectedPotionName or #selectedPotionName == 0 then
             isAutoBuyAndUseActive = false
             -- Ngắt các connection giữ Y trên trời của Auto Mine và Auto Farm Enemy
             if mineSkyPositionConnection then
@@ -1841,26 +1845,33 @@ task.spawn(function()
             end
 
             if autoBuyAndUsePotionEnabled and canAfford then
-                local hasPotion = backpack and backpack:FindFirstChild(selectedPotionName)
-                if hasPotion then
-                    -- Nếu toggle đã tắt giữa chừng thì dừng ngay
-                    if autoBuyAndUsePotionEnabled then
+                -- Xử lý từng potion đã chọn
+                for _, potionName in ipairs(selectedPotionName) do
+                    if not autoBuyAndUsePotionEnabled then
+                        break -- Nếu toggle tắt giữa chừng thì dừng
+                    end
+
+                    local hasPotion = backpack and backpack:FindFirstChild(potionName)
+                    if hasPotion then
+                        -- Nếu có potion trong Backpack thì use ngay
                         pcall(function()
-                            local args = { selectedPotionName }
+                            local args = { potionName }
                             toolRF:InvokeServer(unpack(args))
                         end)
-                    end
-                else
-                    -- Bước 2: Nếu không có potion trong Backpack, check Perks xem có effect không
-                    local hasPotionEffect = hasPotionInPerks(selectedPotionName)
-                    if not hasPotionEffect and autoBuyAndUsePotionEnabled then
-                        -- Không có effect => đã hết potion => đi mua
-                        local ok = tweenToMaria()
-                        if ok and autoBuyAndUsePotionEnabled then
-                            pcall(function()
-                                local args = { selectedPotionName, 3 }
-                                ProximityPurchaseRF:InvokeServer(unpack(args))
-                            end)
+                    else
+                        -- Nếu không có potion trong Backpack, check Perks xem có effect không
+                        local hasPotionEffect = hasPotionInPerks(potionName)
+                        if not hasPotionEffect and autoBuyAndUsePotionEnabled then
+                            -- Không có effect => đã hết potion => đi mua
+                            local ok = tweenToMaria()
+                            if ok and autoBuyAndUsePotionEnabled then
+                                pcall(function()
+                                    local args = { potionName, 3 }
+                                    ProximityPurchaseRF:InvokeServer(unpack(args))
+                                end)
+                                -- Chờ một chút sau khi mua để đảm bảo potion đã được thêm vào backpack
+                                task.wait(1)
+                            end
                         end
                     end
                 end
