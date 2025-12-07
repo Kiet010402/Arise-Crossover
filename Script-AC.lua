@@ -646,6 +646,13 @@ local function swingPickaxeUntilMinedType(targetPart, typeName)
     hrp.CFrame = CFrame.new(targetPos, lookAtPos)
     isMiningInSky = false                                        -- Đánh dấu đã xuống đào
 
+    -- Chuyển camera sang View Player của rock (set CameraSubject là rock part)
+    local camera = workspace.CurrentCamera
+    local originalCameraSubject = camera.CameraSubject
+    if targetPart and targetPart.Parent then
+        camera.CameraSubject = targetPart
+    end
+
     -- Tắt xoay tự do để hạn chế game tự chỉnh hướng nhìn
     local originalAutoRotate = hrp.AssemblyAngularVelocity
     hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
@@ -671,6 +678,11 @@ local function swingPickaxeUntilMinedType(targetPart, typeName)
             or isAutoBuyAndUseActive then
             if keepPositionConnection then
                 keepPositionConnection:Disconnect()
+            end
+            -- Khôi phục camera về player khi dừng
+            local camera = workspace.CurrentCamera
+            if camera and originalCameraSubject then
+                camera.CameraSubject = originalCameraSubject
             end
             return
         end
@@ -720,6 +732,12 @@ local function swingPickaxeUntilMinedType(targetPart, typeName)
     end
     if hrp and hrp.Parent then
         hrp.AssemblyAngularVelocity = originalAutoRotate
+    end
+
+    -- Khôi phục camera về player
+    local camera = workspace.CurrentCamera
+    if camera and originalCameraSubject then
+        camera.CameraSubject = originalCameraSubject
     end
 
     -- Sau khi mine xong, bay lên trời lại ngay lập tức
