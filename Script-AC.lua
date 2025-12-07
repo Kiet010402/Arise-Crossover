@@ -47,6 +47,8 @@ ConfigSystem.DefaultConfig = {
     SelectedItemName = nil,
     AutoSellItemEnabled = false,
     AntiAFKEnabled = true,
+    ESPRockEnabled = false,
+    ESPEnemyEnabled = false,
 }
 ConfigSystem.CurrentConfig = {}
 
@@ -166,6 +168,18 @@ if type(antiAFKEnabled) ~= "boolean" then
 end
 local enemyTypes = {}
 local enemyTypeDropdown = nil
+
+-- ESP state
+local espRockEnabled = ConfigSystem.CurrentConfig.ESPRockEnabled
+if type(espRockEnabled) ~= "boolean" then
+    espRockEnabled = ConfigSystem.DefaultConfig.ESPRockEnabled
+end
+local espEnemyEnabled = ConfigSystem.CurrentConfig.ESPEnemyEnabled
+if type(espEnemyEnabled) ~= "boolean" then
+    espEnemyEnabled = ConfigSystem.DefaultConfig.ESPEnemyEnabled
+end
+local rockESPGuis = {} -- Lưu các BillboardGui của rock ESP
+local enemyESPGuis = {} -- Lưu các BillboardGui của enemy ESP
 
 -- Độ cao trên trời để bay (Y coordinate)
 local SKY_HEIGHT = 300
@@ -2444,6 +2458,198 @@ sections.SettingsInfo:SubLabel({
     Text = "Shortcut: Left Alt (or mobile icon) to hide/show UI"
 })
 
+--// ESP Functions
+local function createESPGui(target, name, distance)
+    -- Tìm hoặc tạo BillboardGui
+    local billboard = target:FindFirstChild("ESPBillboard")
+    if not billboard then
+        billboard = Instance.new("BillboardGui")
+        billboard.Name = "ESPBillboard"
+        billboard.Size = UDim2.new(0, 200, 0, 50)
+        billboard.StudsOffset = Vector3.new(0, 3, 0)
+        billboard.AlwaysOnTop = true
+        billboard.Adornee = target
+        billboard.Parent = target
+
+        local textLabel = Instance.new("TextLabel")
+        textLabel.Name = "ESPLabel"
+        textLabel.Size = UDim2.new(1, 0, 1, 0)
+        textLabel.BackgroundTransparency = 1
+        textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        textLabel.TextStrokeTransparency = 0.5
+        textLabel.TextSize = 14
+        textLabel.Font = Enum.Font.GothamBold
+        textLabel.Parent = billboard
+    end
+
+    local textLabel = billboard:FindFirstChild("ESPLabel")
+    if textLabel then
+        local distanceText = string.format("%.1f", distance) .. " studs"
+        textLabel.Text = name .. "\n" .. distanceText
+    end
+
+    return billboard
+end
+
+local function updateRockESP()
+    if not espRockEnabled then
+        return
+    end
+
+    local player = Players.LocalPlayer
+    local character = player.Character
+    if not character then
+        return
+    end
+
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        return
+    end
+
+    -- Tìm tất cả rock trong workspace
+    local rocksRoot = workspace:FindFirstChild("Rocks")
+    if not rocksRoot then
+        return
+    end
+
+    local currentRocks = {}
+    for _, inst in ipairs(rocksRoot:GetDescendants()) do
+        if inst:IsA("BasePart") and inst.Parent then
+            local model = inst:FindFirstAncestorWhichIsA("Model")
+            if model and model.Name ~= "" then
+                currentRocks[inst] = model.Name
+            end
+        end
+    end
+
+    -- Xóa ESP của rock không còn tồn tại
+    for rockPart, gui in pairs(rockESPGuis) do
+        if not currentRocks[rockPart] or not rockPart.Parent then
+            if gui and gui.Parent then
+                gui:Destroy()
+            end
+            rockESPGuis[rockPart] = nil
+        end
+    end
+
+    -- Tạo hoặc update ESP cho rock hiện tại
+    for rockPart, rockName in pairs(currentRocks) do
+        local distance = (hrp.Position - rockPart.Position).Magnitude
+        local espGui = rockESPGuis[rockPart]
+        if not espGui or not espGui.Parent then
+            espGui = createESPGui(rockPart, rockName, distance)
+            rockESPGuis[rockPart] = espGui
+        else
+            -- Update text
+            local textLabel = espGui:FindFirstChild("ESPLabel")
+            if textLabel then
+                local distanceText = string.format("%.1f", distance) .. " studs"
+                textLabel.Text = rockName .. "\n" .. distanceText
+            end
+        end
+    end
+end
+
+local function updateEnemyESP()
+    if not espEnemyEnabled then
+        return
+    end
+
+    local player = Players.LocalPlayer
+    local character = player.Character
+    if not character then
+        return
+    end
+
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        return
+    end
+
+    -- Tìm tất cả enemy trong workspace.Living
+    local livingRoot = workspace:FindFirstChild("Living")
+    if not livingRoot then
+        return
+    end
+
+    local currentEnemies = {}
+    for _, child in ipairs(livingRoot:GetChildren()) do
+        if child:IsA("Model") and child.Name ~= "Model" then
+            -- Bỏ qua enemy chết
+            if not isEnemyDead(child) then
+                local rootPart = child:FindFirstChild("HumanoidRootPart") or child.PrimaryPart or
+                    child:FindFirstChildWhichIsA("BasePart", true)
+                if rootPart then
+                    local enemyName = extractEnemyTypeName(child.Name) or child.Name
+                    currentEnemies[child] = { rootPart = rootPart, name = enemyName }
+                end
+            end
+        end
+    end
+
+    -- Xóa ESP của enemy không còn tồn tại hoặc đã chết
+    for enemyModel, gui in pairs(enemyESPGuis) do
+        if not currentEnemies[enemyModel] or not enemyModel.Parent or isEnemyDead(enemyModel) then
+            if gui and gui.Parent then
+                gui:Destroy()
+            end
+            enemyESPGuis[enemyModel] = nil
+        end
+    end
+
+    -- Tạo hoặc update ESP cho enemy hiện tại
+    for enemyModel, enemyData in pairs(currentEnemies) do
+        local rootPart = enemyData.rootPart
+        local enemyName = enemyData.name
+        local distance = (hrp.Position - rootPart.Position).Magnitude
+        local espGui = enemyESPGuis[enemyModel]
+        if not espGui or not espGui.Parent then
+            espGui = createESPGui(rootPart, enemyName, distance)
+            enemyESPGuis[enemyModel] = espGui
+        else
+            -- Update text và đảm bảo Adornee đúng
+            if espGui.Adornee ~= rootPart then
+                espGui.Adornee = rootPart
+            end
+            local textLabel = espGui:FindFirstChild("ESPLabel")
+            if textLabel then
+                local distanceText = string.format("%.1f", distance) .. " studs"
+                textLabel.Text = enemyName .. "\n" .. distanceText
+            end
+        end
+    end
+end
+
+-- Vòng lặp update ESP
+task.spawn(function()
+    while task.wait(0.1) do
+        if espRockEnabled then
+            updateRockESP()
+        else
+            -- Nếu tắt ESP, xóa tất cả
+            for rockPart, gui in pairs(rockESPGuis) do
+                if gui and gui.Parent then
+                    gui:Destroy()
+                end
+            end
+            rockESPGuis = {}
+        end
+
+        if espEnemyEnabled then
+            updateEnemyESP()
+        else
+            -- Nếu tắt ESP, xóa tất cả
+            for enemyModel, gui in pairs(enemyESPGuis) do
+                if gui and gui.Parent then
+                    gui:Destroy()
+                end
+            end
+            enemyESPGuis = {}
+        end
+    end
+end)
+
 --// SETTINGS MISC TAB
 sections.SettingsMisc:Header({ Name = "Misc" })
 
@@ -2457,6 +2663,48 @@ sections.SettingsMisc:Toggle({
         notify("Anti AFK", (value and "Enabled" or "Disabled") .. " Anti AFK", 3)
     end,
 }, "AntiAFKToggle")
+
+sections.SettingsMisc:Toggle({
+    Name = "ESP Rock",
+    Default = espRockEnabled,
+    Callback = function(value)
+        espRockEnabled = value
+        ConfigSystem.CurrentConfig.ESPRockEnabled = value
+        ConfigSystem.SaveConfig()
+        notify("ESP Rock", (value and "Enabled" or "Disabled") .. " ESP Rock", 3)
+        
+        -- Nếu tắt, xóa tất cả ESP
+        if not value then
+            for rockPart, gui in pairs(rockESPGuis) do
+                if gui and gui.Parent then
+                    gui:Destroy()
+                end
+            end
+            rockESPGuis = {}
+        end
+    end,
+}, "ESPRockToggle")
+
+sections.SettingsMisc:Toggle({
+    Name = "ESP Enemy",
+    Default = espEnemyEnabled,
+    Callback = function(value)
+        espEnemyEnabled = value
+        ConfigSystem.CurrentConfig.ESPEnemyEnabled = value
+        ConfigSystem.SaveConfig()
+        notify("ESP Enemy", (value and "Enabled" or "Disabled") .. " ESP Enemy", 3)
+        
+        -- Nếu tắt, xóa tất cả ESP
+        if not value then
+            for enemyModel, gui in pairs(enemyESPGuis) do
+                if gui and gui.Parent then
+                    gui:Destroy()
+                end
+            end
+            enemyESPGuis = {}
+        end
+    end,
+}, "ESPEnemyToggle")
 
 -- Global settings giống style UI.lua
 local globalSettings = {
