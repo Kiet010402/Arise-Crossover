@@ -621,9 +621,8 @@ local function tweenToMineTarget(targetPart)
     local distanceToTarget = (Vector3.new(currentPos.X, 0, currentPos.Z) - Vector3.new(targetPos.X, 0, targetPos.Z))
         .Magnitude
 
-    -- Tính thời gian tween dựa trên khoảng cách XZ (chậm hơn vì chỉ di chuyển X và Z, không bị anti-tp)
-    -- Tốc độ: khoảng 8 studs/s để an toàn
-    local time = math.clamp(distanceToTarget / 8, 3, 10) --Tween của Auto Farm Rock
+    -- Thời gian tween dựa trên khoảng cách XZ, tốc độ ~8 studs/s
+    local time = distanceToTarget / 8 --Tween của Auto Farm Rock
 
     -- Hướng về rock (nhưng vẫn ở trên trời)
     local lookAtCFrame = CFrame.new(targetPos, targetPart.Position)
@@ -1274,9 +1273,8 @@ local function tweenToEnemyInSky(enemyModel)
     local distanceToTarget = (Vector3.new(currentPos.X, 0, currentPos.Z) - Vector3.new(targetPos.X, 0, targetPos.Z))
         .Magnitude
 
-    -- Tính thời gian tween dựa trên khoảng cách XZ (chậm hơn vì chỉ di chuyển X và Z, không bị anti-tp)
-    -- Tốc độ: khoảng 8 studs/s để an toàn
-    local time = math.clamp(distanceToTarget / 8, 3, 10) --Tween của Auto Farm Enemy
+    -- Thời gian tween dựa trên khoảng cách XZ, tốc độ ~8 studs/s
+    local time = distanceToTarget / 8 --Tween của Auto Farm Enemy
 
     -- Hướng về enemy (nhưng vẫn ở trên trời)
     local lookAtCFrame = CFrame.new(targetPos, enemyRootPart.Position)
@@ -2814,7 +2812,7 @@ local function updatePlayerESP()
             local textLabel = espGui:FindFirstChild("ESPLabel")
             if textLabel then
                 local distanceText = string.format("%.1f", distance) .. " studs"
-                textLabel.Text = plr.Name .. "\\n" .. distanceText
+                textLabel.Text = plr.Name .. "\n" .. distanceText
             end
         end
     end
