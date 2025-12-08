@@ -146,6 +146,7 @@ local CONFLICT_COOLDOWN = 10 -- Thời gian chờ trước khi thử lại rock 
 -- Trạng thái bay trên trời cho Auto Mine
 local isMiningInSky = false           -- Flag để biết đang bay trên trời hay đang đào
 local mineSkyPositionConnection = nil -- Connection để giữ Y cố định khi bay trên trời
+local currentMineTween = nil          -- Tween đang dùng cho Auto Mine
 
 --// Enemy state
 local selectedEnemyType = ConfigSystem.CurrentConfig.SelectedEnemyType
@@ -560,6 +561,33 @@ local function flyToSkyForMine()
     return true
 end
 
+-- Helper: hủy tween và BodyVelocity để rơi xuống đất ngay
+local function stopAllTweensAndFloat()
+    -- Hủy tween Enemy
+    if currentTween then
+        pcall(function() currentTween:Cancel() end)
+        currentTween = nil
+    end
+    -- Hủy tween Mine
+    if currentMineTween then
+        pcall(function() currentMineTween:Cancel() end)
+        currentMineTween = nil
+    end
+
+    local character = Players.LocalPlayer.Character
+    local hrp = character and character:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        local bv = hrp:FindFirstChild("BodyVelocity")
+        if bv then
+            bv:Destroy()
+        end
+        -- Khôi phục xoay và để rơi tự nhiên
+        hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+    end
+    isMiningInSky = false
+    isFlyingInSky = false
+end
+
 -- Hàm di chuyển trên không trung đến rock (giữ Y cao, chỉ di chuyển X và Z)
 local function tweenToMineTarget(targetPart)
     local player = Players.LocalPlayer
@@ -587,14 +615,22 @@ local function tweenToMineTarget(targetPart)
     -- Hướng về rock (nhưng vẫn ở trên trời)
     local lookAtCFrame = CFrame.new(targetPos, targetPart.Position)
 
+    -- Hủy tween mine cũ nếu còn
+    if currentMineTween then
+        pcall(function() currentMineTween:Cancel() end)
+        currentMineTween = nil
+    end
+
     local tween = TweenService:Create(
         hrp,
         TweenInfo.new(time, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
         { CFrame = lookAtCFrame }
     )
 
+    currentMineTween = tween
     tween:Play()
     tween.Completed:Wait()
+    currentMineTween = nil
 
     return true
 end
@@ -648,8 +684,8 @@ local function swingPickaxeUntilMinedType(targetPart, typeName)
 
     -- Chuyển camera sang View Player của rock (set CameraSubject là rock part)
     local camera = workspace.CurrentCamera
-    local originalCameraSubject = camera.CameraSubject
-    if targetPart and targetPart.Parent then
+    local originalCameraSubject = camera and camera.CameraSubject
+    if camera and targetPart and targetPart.Parent then
         camera.CameraSubject = targetPart
     end
 
@@ -877,6 +913,7 @@ sections.Farm:Toggle({
                 mineSkyPositionConnection:Disconnect()
                 mineSkyPositionConnection = nil
             end
+            stopAllTweensAndFloat()
         end
     end,
 }, "AutoMineToggle")
@@ -1543,6 +1580,7 @@ sections.Enemy:Toggle({
                 skyPositionConnection:Disconnect()
                 skyPositionConnection = nil
             end
+            stopAllTweensAndFloat()
         end
     end,
 }, "AutoFarmEnemyToggle")
