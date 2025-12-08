@@ -194,6 +194,9 @@ local currentFOV = tonumber(ConfigSystem.CurrentConfig.FOV) or ConfigSystem.Defa
 if currentFOV < 1 or currentFOV > 120 then
     currentFOV = ConfigSystem.DefaultConfig.FOV
 end
+if not currentFOV then
+    currentFOV = 100
+end
 
 -- Áp dụng FOV ngay khi load
 pcall(function()
@@ -2939,16 +2942,24 @@ sections.SettingsPlayer:Slider({
     Max = 120,
     Default = currentFOV,
     Callback = function(value)
-        local v = tonumber(value)
-        if v then
-            v = math.clamp(v, 1, 120)
-            currentFOV = v
-            ConfigSystem.CurrentConfig.FOV = v
-            ConfigSystem.SaveConfig()
-            local cam = workspace.CurrentCamera
-            if cam then
-                cam.FieldOfView = v
+        -- Chống nil/format lạ từ slider
+        if typeof(value) == "table" then
+            -- Nếu library trả table, lấy phần tử đầu tiên true
+            for k, v in pairs(value) do
+                if v then
+                    value = k
+                    break
+                end
             end
+        end
+        local v = tonumber(value) or tonumber(currentFOV) or 100
+        v = math.clamp(v, 1, 120)
+        currentFOV = v
+        ConfigSystem.CurrentConfig.FOV = v
+        ConfigSystem.SaveConfig()
+        local cam = workspace.CurrentCamera
+        if cam then
+            cam.FieldOfView = v
         end
     end,
 }, "FOVSlider")
