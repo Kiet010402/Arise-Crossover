@@ -165,7 +165,7 @@ if selectedDistance < 1 or selectedDistance > 10 then
     selectedDistance = ConfigSystem.DefaultConfig.SelectedDistance
 end
 local enemyTweenSpeed = tonumber(ConfigSystem.CurrentConfig.EnemyTweenSpeed) or
-ConfigSystem.DefaultConfig.EnemyTweenSpeed
+    ConfigSystem.DefaultConfig.EnemyTweenSpeed
 enemyTweenSpeed = math.clamp(enemyTweenSpeed, 1, 50)
 local autoFarmEnemyEnabled = ConfigSystem.CurrentConfig.AutoFarmEnemyEnabled
 if type(autoFarmEnemyEnabled) ~= "boolean" then
