@@ -622,7 +622,7 @@ local function tweenToMineTarget(targetPart)
         .Magnitude
 
     -- Thời gian tween dựa trên khoảng cách XZ, tốc độ ~8 studs/s
-    local time = distanceToTarget / 8 --Tween của Auto Farm Rock
+    local time = distanceToTarget / 35 --Tween của Auto Farm Rock
 
     -- Hướng về rock (nhưng vẫn ở trên trời)
     local lookAtCFrame = CFrame.new(targetPos, targetPart.Position)
@@ -1274,7 +1274,7 @@ local function tweenToEnemyInSky(enemyModel)
         .Magnitude
 
     -- Thời gian tween dựa trên khoảng cách XZ, tốc độ ~8 studs/s
-    local time = distanceToTarget / 8 --Tween của Auto Farm Enemy
+    local time = distanceToTarget / 35 --Tween của Auto Farm Enemy
 
     -- Hướng về enemy (nhưng vẫn ở trên trời)
     local lookAtCFrame = CFrame.new(targetPos, enemyRootPart.Position)
