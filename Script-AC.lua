@@ -49,6 +49,8 @@ ConfigSystem.DefaultConfig = {
     AntiAFKEnabled = true,
     ESPRockEnabled = false,
     ESPEnemyEnabled = false,
+    ESPPlayerEnabled = false,
+    FOV = 100,
 }
 ConfigSystem.CurrentConfig = {}
 
@@ -179,8 +181,27 @@ local espEnemyEnabled = ConfigSystem.CurrentConfig.ESPEnemyEnabled
 if type(espEnemyEnabled) ~= "boolean" then
     espEnemyEnabled = ConfigSystem.DefaultConfig.ESPEnemyEnabled
 end
-local rockESPGuis = {}  -- Lưu các BillboardGui của rock ESP
-local enemyESPGuis = {} -- Lưu các BillboardGui của enemy ESP
+local espPlayerEnabled = ConfigSystem.CurrentConfig.ESPPlayerEnabled
+if type(espPlayerEnabled) ~= "boolean" then
+    espPlayerEnabled = ConfigSystem.DefaultConfig.ESPPlayerEnabled
+end
+local rockESPGuis = {}   -- Lưu các BillboardGui của rock ESP
+local enemyESPGuis = {}  -- Lưu các BillboardGui của enemy ESP
+local playerESPGuis = {} -- Lưu các BillboardGui của player ESP
+
+-- FOV state
+local currentFOV = tonumber(ConfigSystem.CurrentConfig.FOV) or ConfigSystem.DefaultConfig.FOV
+if currentFOV < 1 or currentFOV > 120 then
+    currentFOV = ConfigSystem.DefaultConfig.FOV
+end
+
+-- Áp dụng FOV ngay khi load
+pcall(function()
+    local cam = workspace.CurrentCamera
+    if cam then
+        cam.FieldOfView = currentFOV
+    end
+end)
 
 -- Độ cao trên trời để bay (Y coordinate)
 local SKY_HEIGHT = 300
@@ -234,6 +255,7 @@ local sections = {
     TeleportNPC = tabs.Teleport:Section({ Side = "Left" }),
     TeleportShop = tabs.Teleport:Section({ Side = "Right" }),
     SettingsInfo = tabs.Settings:Section({ Side = "Left" }),
+    SettingsPlayer = tabs.Settings:Section({ Side = "Right" }),
     SettingsMisc = tabs.Settings:Section({ Side = "Right" }),
 }
 
@@ -2754,6 +2776,64 @@ local function updateEnemyESP()
     end
 end
 
+local function updatePlayerESP()
+    if not espPlayerEnabled then
+        return
+    end
+
+    local player = Players.LocalPlayer
+    local character = player.Character
+    if not character then
+        return
+    end
+
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        return
+    end
+
+    local currentPlayers = {}
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= player then
+            local char = plr.Character
+            local rootPart = char and
+            (char:FindFirstChild("HumanoidRootPart") or char.PrimaryPart or char:FindFirstChildWhichIsA("BasePart", true))
+            if rootPart and char.Parent then
+                currentPlayers[plr] = rootPart
+            end
+        end
+    end
+
+    -- Xóa ESP của player không còn tồn tại
+    for plr, gui in pairs(playerESPGuis) do
+        if not currentPlayers[plr] or not plr.Character or not currentPlayers[plr].Parent then
+            if gui and gui.Parent then
+                gui:Destroy()
+            end
+            playerESPGuis[plr] = nil
+        end
+    end
+
+    -- Tạo hoặc update ESP cho player hiện tại
+    for plr, rootPart in pairs(currentPlayers) do
+        local distance = (hrp.Position - rootPart.Position).Magnitude
+        local espGui = playerESPGuis[plr]
+        if not espGui or not espGui.Parent then
+            espGui = createESPGui(rootPart, plr.Name, distance)
+            playerESPGuis[plr] = espGui
+        else
+            if espGui.Adornee ~= rootPart then
+                espGui.Adornee = rootPart
+            end
+            local textLabel = espGui:FindFirstChild("ESPLabel")
+            if textLabel then
+                local distanceText = string.format("%.1f", distance) .. " studs"
+                textLabel.Text = plr.Name .. "\n" .. distanceText
+            end
+        end
+    end
+end
+
 -- Vòng lặp update ESP
 task.spawn(function()
     while task.wait(0.1) do
@@ -2779,6 +2859,17 @@ task.spawn(function()
                 end
             end
             enemyESPGuis = {}
+        end
+
+        if espPlayerEnabled then
+            updatePlayerESP()
+        else
+            for plr, gui in pairs(playerESPGuis) do
+                if gui and gui.Parent then
+                    gui:Destroy()
+                end
+            end
+            playerESPGuis = {}
         end
     end
 end)
@@ -2838,6 +2929,49 @@ sections.SettingsMisc:Toggle({
         end
     end,
 }, "ESPEnemyToggle")
+
+--// SETTINGS PLAYER TAB
+sections.SettingsPlayer:Header({ Name = "Player" })
+
+sections.SettingsPlayer:Slider({
+    Name = "FOV",
+    Min = 1,
+    Max = 120,
+    Default = currentFOV,
+    Callback = function(value)
+        local v = tonumber(value)
+        if v then
+            v = math.clamp(v, 1, 120)
+            currentFOV = v
+            ConfigSystem.CurrentConfig.FOV = v
+            ConfigSystem.SaveConfig()
+            local cam = workspace.CurrentCamera
+            if cam then
+                cam.FieldOfView = v
+            end
+        end
+    end,
+}, "FOVSlider")
+
+sections.SettingsPlayer:Toggle({
+    Name = "ESP Player",
+    Default = espPlayerEnabled,
+    Callback = function(value)
+        espPlayerEnabled = value
+        ConfigSystem.CurrentConfig.ESPPlayerEnabled = value
+        ConfigSystem.SaveConfig()
+        notify("ESP Player", (value and "Enabled" or "Disabled") .. " ESP Player", 3)
+
+        if not value then
+            for plr, gui in pairs(playerESPGuis) do
+                if gui and gui.Parent then
+                    gui:Destroy()
+                end
+            end
+            playerESPGuis = {}
+        end
+    end,
+}, "ESPPlayerToggle")
 
 -- Global settings giống style UI.lua
 local globalSettings = {
