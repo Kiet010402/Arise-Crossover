@@ -912,7 +912,7 @@ end
 
 -- Slider chỉnh tốc độ tween Auto Mine (studs/giây)
 sections.Farm:Slider({
-    Name = "Tween Speed (Mine)",
+    Name = "Tween Speed (1-50)",
     Default = mineTweenSpeed,
     Minimum = 1,
     Maximum = 50,
@@ -924,6 +924,15 @@ sections.Farm:Slider({
         mineTweenSpeed = v
         ConfigSystem.CurrentConfig.MineTweenSpeed = v
         ConfigSystem.SaveConfig()
+        -- Áp dụng ngay: hủy tween hiện tại và bay lại nếu đang Auto Mine
+        if autoMineEnabled and not isAutoBuyAndUseActive then
+            if currentMineTween then
+                pcall(function() currentMineTween:Cancel() end)
+                currentMineTween = nil
+            end
+            isMiningInSky = false
+            flyToSkyForMine()
+        end
     end
 }, "MineTweenSpeedSlider")
 
@@ -1595,7 +1604,7 @@ end
 
 -- Slider chỉnh tốc độ tween Auto Farm Enemy (studs/giây)
 sections.Enemy:Slider({
-    Name = "Tween Speed (Enemy)",
+    Name = "Tween Speed (1-50)",
     Default = enemyTweenSpeed,
     Minimum = 1,
     Maximum = 50,
@@ -1607,6 +1616,15 @@ sections.Enemy:Slider({
         enemyTweenSpeed = v
         ConfigSystem.CurrentConfig.EnemyTweenSpeed = v
         ConfigSystem.SaveConfig()
+        -- Áp dụng ngay: hủy tween hiện tại và bay lại nếu đang Auto Farm Enemy
+        if autoFarmEnemyEnabled and not isAutoBuyAndUseActive then
+            if currentTween then
+                pcall(function() currentTween:Cancel() end)
+                currentTween = nil
+            end
+            isFlyingInSky = false
+            flyToSky()
+        end
     end
 }, "EnemyTweenSpeedSlider")
 
