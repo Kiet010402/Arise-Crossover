@@ -576,13 +576,19 @@ local function stopAllTweensAndFloat()
 
     local character = Players.LocalPlayer.Character
     local hrp = character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     if hrp then
-        local bv = hrp:FindFirstChild("BodyVelocity")
-        if bv then
-            bv:Destroy()
+        -- Xóa mọi BodyVelocity/BodyPosition/BodyGyro để rơi tự do
+        for _, inst in ipairs(hrp:GetChildren()) do
+            if inst:IsA("BodyVelocity") or inst:IsA("BodyPosition") or inst:IsA("BodyGyro") then
+                inst:Destroy()
+            end
         end
         -- Khôi phục xoay và để rơi tự nhiên
         hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+    end
+    if humanoid then
+        humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
     end
     isMiningInSky = false
     isFlyingInSky = false
