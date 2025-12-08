@@ -50,7 +50,6 @@ ConfigSystem.DefaultConfig = {
     ESPRockEnabled = false,
     ESPEnemyEnabled = false,
     ESPPlayerEnabled = false,
-    FOV = 100,
 }
 ConfigSystem.CurrentConfig = {}
 
@@ -185,26 +184,9 @@ local espPlayerEnabled = ConfigSystem.CurrentConfig.ESPPlayerEnabled
 if type(espPlayerEnabled) ~= "boolean" then
     espPlayerEnabled = ConfigSystem.DefaultConfig.ESPPlayerEnabled
 end
-local rockESPGuis = {}   -- Lưu các BillboardGui của rock ESP
-local enemyESPGuis = {}  -- Lưu các BillboardGui của enemy ESP
+local rockESPGuis = {}  -- Lưu các BillboardGui của rock ESP
+local enemyESPGuis = {} -- Lưu các BillboardGui của enemy ESP
 local playerESPGuis = {} -- Lưu các BillboardGui của player ESP
-
--- FOV state
-local currentFOV = tonumber(ConfigSystem.CurrentConfig.FOV) or ConfigSystem.DefaultConfig.FOV
-if currentFOV < 1 or currentFOV > 120 then
-    currentFOV = ConfigSystem.DefaultConfig.FOV
-end
-if not currentFOV then
-    currentFOV = 100
-end
-
--- Áp dụng FOV ngay khi load
-pcall(function()
-    local cam = workspace.CurrentCamera
-    if cam then
-        cam.FieldOfView = currentFOV
-    end
-end)
 
 -- Độ cao trên trời để bay (Y coordinate)
 local SKY_HEIGHT = 300
@@ -2779,6 +2761,7 @@ local function updateEnemyESP()
     end
 end
 
+-- ESP Player
 local function updatePlayerESP()
     if not espPlayerEnabled then
         return
@@ -2800,7 +2783,7 @@ local function updatePlayerESP()
         if plr ~= player then
             local char = plr.Character
             local rootPart = char and
-            (char:FindFirstChild("HumanoidRootPart") or char.PrimaryPart or char:FindFirstChildWhichIsA("BasePart", true))
+                (char:FindFirstChild("HumanoidRootPart") or char.PrimaryPart or char:FindFirstChildWhichIsA("BasePart", true))
             if rootPart and char.Parent then
                 currentPlayers[plr] = rootPart
             end
@@ -2831,7 +2814,7 @@ local function updatePlayerESP()
             local textLabel = espGui:FindFirstChild("ESPLabel")
             if textLabel then
                 local distanceText = string.format("%.1f", distance) .. " studs"
-                textLabel.Text = plr.Name .. "\n" .. distanceText
+                textLabel.Text = plr.Name .. "\\n" .. distanceText
             end
         end
     end
@@ -2935,34 +2918,6 @@ sections.SettingsMisc:Toggle({
 
 --// SETTINGS PLAYER TAB
 sections.SettingsPlayer:Header({ Name = "Player" })
-
-sections.SettingsPlayer:Slider({
-    Name = "FOV",
-    Min = 1,
-    Max = 120,
-    Default = currentFOV,
-    Callback = function(value)
-        -- Chống nil/format lạ từ slider
-        if typeof(value) == "table" then
-            -- Nếu library trả table, lấy phần tử đầu tiên true
-            for k, v in pairs(value) do
-                if v then
-                    value = k
-                    break
-                end
-            end
-        end
-        local v = tonumber(value) or tonumber(currentFOV) or 100
-        v = math.clamp(v, 1, 120)
-        currentFOV = v
-        ConfigSystem.CurrentConfig.FOV = v
-        ConfigSystem.SaveConfig()
-        local cam = workspace.CurrentCamera
-        if cam then
-            cam.FieldOfView = v
-        end
-    end,
-}, "FOVSlider")
 
 sections.SettingsPlayer:Toggle({
     Name = "ESP Player",
