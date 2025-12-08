@@ -50,6 +50,8 @@ ConfigSystem.DefaultConfig = {
     ESPRockEnabled = false,
     ESPEnemyEnabled = false,
     ESPPlayerEnabled = false,
+    MineTweenSpeed = 35,
+    EnemyTweenSpeed = 35,
 }
 ConfigSystem.CurrentConfig = {}
 
@@ -136,6 +138,8 @@ local selectedMineDistance = tonumber(ConfigSystem.CurrentConfig.SelectedMineDis
 if selectedMineDistance < 1 or selectedMineDistance > 10 then
     selectedMineDistance = ConfigSystem.DefaultConfig.SelectedMineDistance
 end
+local mineTweenSpeed = tonumber(ConfigSystem.CurrentConfig.MineTweenSpeed) or ConfigSystem.DefaultConfig.MineTweenSpeed
+mineTweenSpeed = math.clamp(mineTweenSpeed, 1, 50)
 local rockTypes = {}
 local rockTypeDropdown = nil
 
@@ -160,6 +164,9 @@ local selectedDistance = tonumber(ConfigSystem.CurrentConfig.SelectedDistance) o
 if selectedDistance < 1 or selectedDistance > 10 then
     selectedDistance = ConfigSystem.DefaultConfig.SelectedDistance
 end
+local enemyTweenSpeed = tonumber(ConfigSystem.CurrentConfig.EnemyTweenSpeed) or
+ConfigSystem.DefaultConfig.EnemyTweenSpeed
+enemyTweenSpeed = math.clamp(enemyTweenSpeed, 1, 50)
 local autoFarmEnemyEnabled = ConfigSystem.CurrentConfig.AutoFarmEnemyEnabled
 if type(autoFarmEnemyEnabled) ~= "boolean" then
     autoFarmEnemyEnabled = ConfigSystem.DefaultConfig.AutoFarmEnemyEnabled
@@ -184,8 +191,8 @@ local espPlayerEnabled = ConfigSystem.CurrentConfig.ESPPlayerEnabled
 if type(espPlayerEnabled) ~= "boolean" then
     espPlayerEnabled = ConfigSystem.DefaultConfig.ESPPlayerEnabled
 end
-local rockESPGuis = {}  -- Lưu các BillboardGui của rock ESP
-local enemyESPGuis = {} -- Lưu các BillboardGui của enemy ESP
+local rockESPGuis = {}   -- Lưu các BillboardGui của rock ESP
+local enemyESPGuis = {}  -- Lưu các BillboardGui của enemy ESP
 local playerESPGuis = {} -- Lưu các BillboardGui của player ESP
 
 -- Độ cao trên trời để bay (Y coordinate)
@@ -621,8 +628,8 @@ local function tweenToMineTarget(targetPart)
     local distanceToTarget = (Vector3.new(currentPos.X, 0, currentPos.Z) - Vector3.new(targetPos.X, 0, targetPos.Z))
         .Magnitude
 
-    -- Thời gian tween dựa trên khoảng cách XZ, tốc độ ~8 studs/s
-    local time = distanceToTarget / 35 --Tween của Auto Farm Rock
+    -- Thời gian tween dựa trên khoảng cách XZ, tốc độ ~mineTweenSpeed studs/s
+    local time = distanceToTarget / mineTweenSpeed --Tween của Auto Farm Rock
 
     -- Hướng về rock (nhưng vẫn ở trên trời)
     local lookAtCFrame = CFrame.new(targetPos, targetPart.Position)
@@ -902,6 +909,23 @@ local mineDistanceDropdown = sections.Farm:Dropdown({
 if selectedMineDistance and mineDistanceDropdown and mineDistanceDropdown.UpdateSelection then
     mineDistanceDropdown:UpdateSelection(tostring(selectedMineDistance))
 end
+
+-- Slider chỉnh tốc độ tween Auto Mine (studs/giây)
+sections.Farm:Slider({
+    Name = "Tween Speed (Mine)",
+    Default = mineTweenSpeed,
+    Minimum = 1,
+    Maximum = 50,
+    DisplayMethod = "Value",
+    Precision = 1,
+    Callback = function(value)
+        local v = tonumber(value) or mineTweenSpeed
+        v = math.clamp(v, 1, 50)
+        mineTweenSpeed = v
+        ConfigSystem.CurrentConfig.MineTweenSpeed = v
+        ConfigSystem.SaveConfig()
+    end
+}, "MineTweenSpeedSlider")
 
 sections.Farm:Toggle({
     Name = "Auto Mine",
@@ -1273,8 +1297,8 @@ local function tweenToEnemyInSky(enemyModel)
     local distanceToTarget = (Vector3.new(currentPos.X, 0, currentPos.Z) - Vector3.new(targetPos.X, 0, targetPos.Z))
         .Magnitude
 
-    -- Thời gian tween dựa trên khoảng cách XZ, tốc độ ~8 studs/s
-    local time = distanceToTarget / 35 --Tween của Auto Farm Enemy
+    -- Thời gian tween dựa trên khoảng cách XZ, tốc độ ~enemyTweenSpeed studs/s
+    local time = distanceToTarget / enemyTweenSpeed --Tween của Auto Farm Enemy
 
     -- Hướng về enemy (nhưng vẫn ở trên trời)
     local lookAtCFrame = CFrame.new(targetPos, enemyRootPart.Position)
@@ -1568,6 +1592,23 @@ local distanceDropdown = sections.Enemy:Dropdown({
 if selectedDistance and distanceDropdown and distanceDropdown.UpdateSelection then
     distanceDropdown:UpdateSelection(tostring(selectedDistance))
 end
+
+-- Slider chỉnh tốc độ tween Auto Farm Enemy (studs/giây)
+sections.Enemy:Slider({
+    Name = "Tween Speed (Enemy)",
+    Default = enemyTweenSpeed,
+    Minimum = 1,
+    Maximum = 50,
+    DisplayMethod = "Value",
+    Precision = 1,
+    Callback = function(value)
+        local v = tonumber(value) or enemyTweenSpeed
+        v = math.clamp(v, 1, 50)
+        enemyTweenSpeed = v
+        ConfigSystem.CurrentConfig.EnemyTweenSpeed = v
+        ConfigSystem.SaveConfig()
+    end
+}, "EnemyTweenSpeedSlider")
 
 sections.Enemy:Toggle({
     Name = "Auto Farm Enemy",
